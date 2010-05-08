@@ -1,5 +1,5 @@
 CPP=c++
-BUILD_FLAGS=-g -O3 -Wall -DPIPE_NOT_EFD -Wno-deprecated
+BUILD_FLAGS=-g -O3 -Wall -DPIPE_NOT_EFD -Wno-deprecated -m32
 ARCH=x86-64
 
 all:	ufHTTPServer
