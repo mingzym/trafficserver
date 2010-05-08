@@ -302,21 +302,26 @@ void UFIO::accept(UFIOAcceptThreadChooser* ufiotChooser,
     }
 }
 
+UFIOScheduler* UFIO::getUFIOS()
+{
+    UFIOScheduler* tmpUfios = 0;
+    //
+    //find the ufios for this thread - this map operation should only be done once
+    ThreadFiberIOSchedulerMap::iterator index = UFIOScheduler::_tfiosscheduler.find(pthread_self());
+    if(index != UFIOScheduler::_tfiosscheduler.end())
+        tmpUfios = index->second;
+    else
+    {
+        cerr<<"couldnt find thread io scheduler for thread "<<pthread_self()<<" - please create one first and assign to the thread - current size of that info = "<<UFIOScheduler::_tfiosscheduler.size()<<endl;
+        exit(1); //TODO: may not be necessary to exit here
+    }
+
+    return tmpUfios;
+}
+
 ssize_t UFIO::read(void *buf, size_t nbyte, TIME_IN_US timeout)
 {
-    UFIOScheduler* tmpUfios = _ufios;
-    if(!tmpUfios)
-    {
-        //find the ufios for this thread - this map operation should only be done once
-        ThreadFiberIOSchedulerMap::iterator index = UFIOScheduler::_tfiosscheduler.find(pthread_self());
-        if(index != UFIOScheduler::_tfiosscheduler.end())
-            tmpUfios = index->second;
-        else
-        {
-            cerr<<"couldnt find thread io scheduler for thread "<<pthread_self()<<" - please create one first and assign to the thread - current size of that info = "<<UFIOScheduler::_tfiosscheduler.size()<<endl;
-            exit(1); //TODO: may not be necessary to exit here
-        }
-    }
+    UFIOScheduler* tmpUfios = _ufios ? _ufios : getUFIOS();
 
     //we read everything there was to be read the last time, so this time wait to read
     if(!_amtReadLastTimeEqualToAskedAmt) 
@@ -330,7 +335,6 @@ ssize_t UFIO::read(void *buf, size_t nbyte, TIME_IN_US timeout)
         if(_errno == ETIMEDOUT) //setupForRead will return w/ success however it will set the errno to ETIMEDOUT if a timeout occurred
             return -1;
     }
-
 
     _amtReadLastTimeEqualToAskedAmt = false;
     ssize_t n = 0;;
@@ -369,19 +373,7 @@ ssize_t UFIO::read(void *buf, size_t nbyte, TIME_IN_US timeout)
 
 ssize_t UFIO::write(const void *buf, size_t nbyte, TIME_IN_US timeout)
 {
-    UFIOScheduler* tmpUfios = _ufios;
-    if(!tmpUfios)
-    {
-        //find the ufios for this thread - this map operation should only be done once
-        ThreadFiberIOSchedulerMap::iterator index = UFIOScheduler::_tfiosscheduler.find(pthread_self());
-        if(index != UFIOScheduler::_tfiosscheduler.end())
-            tmpUfios = index->second;
-        else
-        {
-            cerr<<"couldnt find thread io scheduler for thread "<<pthread_self()<<" - please create one first and assign to the thread - current size of that info = "<<UFIOScheduler::_tfiosscheduler.size()<<endl;
-            exit(1); //TODO: may not be necessary to exit here
-        }
-    }
+    UFIOScheduler* tmpUfios = _ufios ? _ufios : getUFIOS();
 
     ssize_t n = 0;;
     unsigned int amtWritten = 0;
@@ -428,20 +420,7 @@ int UFIO::connect(const struct sockaddr *addr,
 
 
     //find the scheduler for this request
-    UFIOScheduler* tmpUfios = _ufios;
-    if(!tmpUfios)
-    {
-        //find the ufios for this thread - this map operation should only be done once
-        ThreadFiberIOSchedulerMap::iterator index = UFIOScheduler::_tfiosscheduler.find(pthread_self());
-        if(index != UFIOScheduler::_tfiosscheduler.end())
-            tmpUfios = index->second;
-        else
-        {
-            cerr<<"couldnt find thread io scheduler for thread "<<pthread_self()<<" - please create one first and assign to the thread - current size of that info = "<<UFIOScheduler::_tfiosscheduler.size()<<endl;
-            return -1;
-        }
-    }
-
+    UFIOScheduler* tmpUfios = _ufios ? _ufios : getUFIOS();
 
     int n = 0;
     int err = 0;
@@ -477,6 +456,175 @@ int UFIO::connect(const struct sockaddr *addr,
 
     return 0;
 }
+
+int UFIO::sendto(const char *buf, int len, const struct sockaddr *to, int tolen, TIME_IN_US timeout)
+{
+    UFIOScheduler* tmpUfios = _ufios ? _ufios : getUFIOS();
+
+    ssize_t n = 0;;
+    unsigned int amtWritten = 0;
+    while(1)
+    {
+        n = ::sendto(_fd, buf+amtWritten, len-amtWritten, 0, to, tolen);
+        if(n > 0)
+        {
+            amtWritten += n;
+            if((int)amtWritten == len)
+                return amtWritten;
+            else
+                continue;
+        }
+        else if(n < 0)
+        {
+            _errno = errno;
+            if((errno == EAGAIN) || (errno == EWOULDBLOCK))
+            {
+                _errno = 0;
+                if(!tmpUfios->setupForWrite(this, timeout))
+                {
+                    _errno = errno;
+                    return -1;
+                }
+            }
+            else if(errno == EINTR)
+                continue;
+            else
+                break;
+        }
+        else if(n == 0)
+            break;
+    }
+    return n;
+}
+
+int UFIO::sendmsg(const struct msghdr *msg, 
+                  int flags,
+	              TIME_IN_US timeout)
+{
+    UFIOScheduler* tmpUfios = _ufios ? _ufios : getUFIOS();
+
+    ssize_t n = 0;;
+    while(1)
+    {
+        n = ::sendmsg(_fd, msg, flags); 
+        if(n > 0)
+            continue;
+        else if(n < 0)
+        {
+            _errno = errno;
+            if((errno == EAGAIN) || (errno == EWOULDBLOCK))
+            {
+                _errno = 0;
+                if(!tmpUfios->setupForWrite(this, timeout))
+                {
+                    _errno = errno;
+                    return -1;
+                }
+            }
+            else if(errno == EINTR)
+                continue;
+            else
+                break;
+        }
+        else if(n == 0)
+            break;
+    }
+    return n;
+}
+
+int UFIO::recvfrom(char *buf, 
+                   int len, 
+                   struct sockaddr *from,
+		           int *fromlen, 
+                   TIME_IN_US timeout)
+{
+    UFIOScheduler* tmpUfios = _ufios ? _ufios : getUFIOS();
+
+    //we read everything there was to be read the last time, so this time wait to read
+    if(!_amtReadLastTimeEqualToAskedAmt) 
+    {
+        //wait for something to read first
+        if(!tmpUfios->setupForRead(this, timeout))
+        {
+            _errno = errno;
+            return -1;
+        }
+        if(_errno == ETIMEDOUT) //setupForRead will return w/ success however it will set the errno to ETIMEDOUT if a timeout occurred
+            return -1;
+    }
+
+    _amtReadLastTimeEqualToAskedAmt = false;
+    ssize_t n = 0;;
+    while(1)
+    {
+        n = ::recvfrom(_fd, buf, len, 0, from, (socklen_t *)fromlen);
+        if(n > 0)
+        {
+            _amtReadLastTimeEqualToAskedAmt = (n != len) ? false : true;
+            return n;
+        }
+        else if(n < 0)
+        {
+            if((errno == EAGAIN) || (errno == EWOULDBLOCK))
+            {
+                _errno = 0;
+                if(!tmpUfios->setupForRead(this, timeout))
+                {
+                    _errno = errno;
+                    return -1;
+                }
+            }
+            else if(errno == EINTR)
+                continue;
+            else
+            {
+                _errno = errno;
+                break;
+            }
+        }
+        else if(n == 0)
+            break;
+    }
+    return n;
+}
+
+int UFIO::recvmsg(struct msghdr *msg, 
+                  int flags,
+	              TIME_IN_US timeout)
+{
+    UFIOScheduler* tmpUfios = _ufios ? _ufios : getUFIOS();
+
+    ssize_t n = 0;
+    while(1)
+    {
+        n = ::recvmsg(_fd, msg, flags);
+        if(n > 0)
+            return n;
+        else if(n < 0)
+        {
+            if((errno == EAGAIN) || (errno == EWOULDBLOCK))
+            {
+                _errno = 0;
+                if(!tmpUfios->setupForRead(this, timeout))
+                {
+                    _errno = errno;
+                    return -1;
+                }
+            }
+            else if(errno == EINTR)
+                continue;
+            else
+            {
+                _errno = errno;
+                break;
+            }
+        }
+        else if(n == 0)
+            break;
+    }
+    return n;
+}
+
 
 
 ThreadFiberIOSchedulerMap UFIOScheduler::_tfiosscheduler;
@@ -864,3 +1012,5 @@ void EpollUFIOScheduler::waitForEvents(TIME_IN_US timeToWait)
     myScheduler->_notifyArgs = 0;
     myScheduler->_notifyFunc = 0;
 }
+
+

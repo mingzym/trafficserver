@@ -79,6 +79,23 @@ struct UFIO
     //another call to this fxn if the return was == to nbyte
     ssize_t read(void *buf, size_t nbyte, TIME_IN_US timeout = 0);
     ssize_t write(const void *buf, size_t nbyte, TIME_IN_US timeout = 0);
+    int sendto(const char *msg, 
+                  int len,
+	              const struct sockaddr *to, 
+                  int tolen, 
+                  TIME_IN_US timeout);
+    int sendmsg(const struct msghdr *msg, 
+                   int flags,
+	               TIME_IN_US timeout);
+    int recvfrom(char *buf, 
+                    int len, 
+                    struct sockaddr *from,
+		            int *fromlen, 
+                    TIME_IN_US timeout);
+    int recvmsg(struct msghdr *msg, 
+                   int flags,
+	               TIME_IN_US timeout);
+
     bool close();
 
     bool setFd(int fd, bool makeNonBlocking = true);
@@ -109,6 +126,7 @@ protected:
 
     int                         _lastEpollFlag;
     bool                        _amtReadLastTimeEqualToAskedAmt;
+    static UFIOScheduler* getUFIOS();
 };
 inline unsigned int UFIO::getErrno() const { return _errno; }
 inline int UFIO::getFd() const { return _fd; }
