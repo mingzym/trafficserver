@@ -2,6 +2,8 @@
 #include "UF.H"
 #include "UFIO.H"
 #include "UFServer.H"
+#include <string.h>
+#include <stdio.h>
 #include <iostream>
 #include <errno.h>
 #include <sys/types.h>
