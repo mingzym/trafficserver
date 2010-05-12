@@ -26,6 +26,7 @@ void EchoServer::handleNewConnection(UFIO* ufio)
     }
 
     char buf[256];
+    int n = 0;
     while ( ((n = ufio->read(buf, 255, readTimeout)) > 0) && ((n = ufio->write(buf, 255)) > 0) ) {}
 }
 

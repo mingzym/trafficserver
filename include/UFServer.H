@@ -102,17 +102,4 @@ inline std::pair<UFScheduler*, pthread_t> UFServerThreadChooser::pickThread(int 
     return _threadList[lastLocUsed++%(_threadList.size())];
 }
 
-struct IORunner : public UF
-{
-    void run();
-    IORunner(bool registerMe = false)
-    {
-        if(registerMe)
-            _myLoc = UFFactory::getInstance()->registerFunc((UF*)this);
-    }
-    UF* createUF() { return new IORunner(); }
-    static IORunner* _self;
-    static int _myLoc;
-};
-
 #endif

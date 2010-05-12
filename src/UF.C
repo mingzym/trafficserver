@@ -107,9 +107,10 @@ static pthread_key_t getThreadKey()
 pthread_key_t UFScheduler::_specific_key = getThreadKey();
 UFScheduler::UFScheduler()
 {
+    _exitJustMe = false;
     _specific = 0;
     _currentFiber = 0;
-    //_exit = false;
+
     if(_inThreadedMode)
     {
         pthread_mutex_init(&_mutexToNominateToActiveList, NULL);
@@ -255,7 +256,7 @@ void UFScheduler::runScheduler()
     struct timeval now;
     struct timeval start,finish;
     gettimeofday(&start, 0);
-    while(!_exit)
+    while(!_exitJustMe && !_exit)
     {
         UFList::iterator beg = _activeRunningList.begin();
         for(; beg != _activeRunningList.end(); )
@@ -423,3 +424,35 @@ int UFFactory::registerFunc(UF* uf)
     return _size++;
 }
 
+void* setupThread(void* args)
+{
+    if(!args)
+        return 0;
+
+    list<UF*>* ufsToStartWith = (list<UF*>*) args;
+    UFScheduler ufs;
+    for(list<UF*>::iterator beg = ufsToStartWith->begin();
+        beg != ufsToStartWith->end();
+        ++beg)
+        ufs.addFiberToScheduler(*beg);
+    delete ufsToStartWith;
+
+    //run the scheduler
+    ufs.runScheduler();
+
+    return 0;
+}
+
+void UFScheduler::ufCreateThread(pthread_t* tid, list<UF*>* ufsToStartWith)
+{
+    //create the threads
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+
+    if(pthread_create(tid, &attr, setupThread, (void*)ufsToStartWith) != 0)
+    {
+        cerr<<"couldnt create thread "<<strerror(errno)<<endl;
+        exit(1);
+    }
+}

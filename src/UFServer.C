@@ -108,9 +108,9 @@ static void* acceptThreadStart(void* args)
 
     UFScheduler ufs;
     //add the io scheduler
-    ufs.addFiberToScheduler(UFFactory::getInstance()->selectUF(IORunner::_myLoc)->createUF());
+    ufs.addFiberToScheduler(new IORunner());
     //add the accept port fiber
-    UF* uf = UFFactory::getInstance()->selectUF(AcceptRunner::_myLoc)->createUF();
+    UF* uf = new AcceptRunner();
     if(!uf)
         return 0;
     uf->_startingArgs = args;
@@ -128,7 +128,7 @@ static void* ioThreadStart(void* args)
 
     UFScheduler ufs;
     //add the io scheduler
-    ufs.addFiberToScheduler(UFFactory::getInstance()->selectUF(IORunner::_myLoc)->createUF());
+    ufs.addFiberToScheduler(new IORunner());
 
     ((UFServer*) args)->addThread("NETIO", &ufs);
     ufs.runScheduler();
@@ -287,17 +287,3 @@ vector<pthread_t>* UFServer::getThreadType(const string& type)
 }
 
 
-int IORunner::_myLoc = -1;
-IORunner* IORunner::_self = new IORunner(true);
-void IORunner::run()
-{
-    UF* uf = UFScheduler::getUF();
-    //add the scheduler for this 
-    EpollUFIOScheduler* ioRunner = new EpollUFIOScheduler(uf, 10000); //TODO: support other event scheduler mechanisms later
-    if(!ioRunner || !ioRunner->isSetup())
-    {
-        cerr<<"couldnt setup epoll io scheduler object"<<endl;
-        return;
-    }
-    ioRunner->waitForEvents(1000000); //TODO: allow to change the epoll interval later
-}

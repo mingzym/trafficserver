@@ -1,9 +1,9 @@
+#include <string.h>
+#include <stdio.h>
 #include "UFStatSystem.H"
 #include "UF.H"
 #include "UFIO.H"
 #include "UFServer.H"
-#include <string.h>
-#include <stdio.h>
 #include <iostream>
 #include <errno.h>
 #include <sys/types.h>
@@ -466,16 +466,16 @@ void* UFStatCollector::scheduler(void *args)
     UFScheduler ufs;
 
     // stat collector
-    ufs.addFiberToScheduler(UFFactory::getInstance()->selectUF(CollectorRunner::_myLoc)->createUF());
+    ufs.addFiberToScheduler(new CollectorRunner());
 
     // set thread for stat command listener to run on
     StatThreadChooser::_accept_thread = make_pair(&ufs, pthread_self());
     
     // io scheduler
-    ufs.addFiberToScheduler(UFFactory::getInstance()->selectUF(IORunner::_myLoc)->createUF());
+    ufs.addFiberToScheduler(new IORunner());
     
     // stat command listener
-    ufs.addFiberToScheduler(UFFactory::getInstance()->selectUF(StatCommandListenerRun::_myLoc)->createUF());
+    ufs.addFiberToScheduler(new StatCommandListenerRun());
     ((UFServer*) args)->addThread("STAT_COLLECTOR", &ufs);
     ufs.runScheduler();
     return 0;

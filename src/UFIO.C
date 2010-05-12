@@ -422,36 +422,21 @@ int UFIO::connect(const struct sockaddr *addr,
     //find the scheduler for this request
     UFIOScheduler* tmpUfios = _ufios ? _ufios : getUFIOS();
 
-    int n = 0;
-    int err = 0;
     while(::connect(_fd, addr, addrlen) < 0)
     {
         _errno = errno;
-        if(errno != EINTR)
+        if(errno == EINTR)
+            continue;
+        else if(errno == EINPROGRESS || errno == EAGAIN)
         {
-            if((errno != EINPROGRESS || errno != EAGAIN) && 
-               (errno != EADDRINUSE || err == 0))
-                return -1;
-
-            //wait to finish the connect
             if(!tmpUfios->setupForConnect(this, timeout))
             {
                 cerr<<"couldnt setup for connect - "<<strerror(errno)<<endl;
                 return -1;
             }
-
-            n = sizeof(int);
-            if (getsockopt(_fd, SOL_SOCKET, SO_ERROR, (char *)&err, (socklen_t *)&n) < 0)
-                return -1;
-            if(err)
-            {
-                _errno = err;
-                return -1;
-            }
-
-            //successful
-            break;
         }
+        else
+            return -1;
     }
 
     return 0;
@@ -892,7 +877,7 @@ void EpollUFIOScheduler::waitForEvents(TIME_IN_US timeToWait)
 #endif
     myScheduler->_notifyFunc = notifyEpollFunc;
     //add the UF to handle the efds calls
-    UF* eventFdFiber = UFFactory::getInstance()->selectUF(ReadNotificationUF::_myLoc)->createUF();
+    UF* eventFdFiber = new ReadNotificationUF();
     eventFdFiber->_startingArgs = ens;
     myScheduler->addFiberToScheduler(eventFdFiber, 0);
 
@@ -1013,4 +998,23 @@ void EpollUFIOScheduler::waitForEvents(TIME_IN_US timeToWait)
     myScheduler->_notifyFunc = 0;
 }
 
+int IORunner::_myLoc = -1;
+IORunner* IORunner::_self = new IORunner(true);
+void IORunner::run()
+{
+    UF* uf = UFScheduler::getUF();
+    //add the scheduler for this 
+    EpollUFIOScheduler* ioRunner = new EpollUFIOScheduler(uf, 10000); //TODO: support other event scheduler mechanisms later
+    if(!ioRunner || !ioRunner->isSetup())
+    {
+        cerr<<"couldnt setup epoll io scheduler object"<<endl;
+        return;
+    }
+    ioRunner->waitForEvents(1000000); //TODO: allow to change the epoll interval later
+}
 
+void UFIO::ufCreateThreadWithIO(pthread_t* tid, list<UF*>* ufsToStartWith)
+{
+    ufsToStartWith->push_front(new IORunner());
+    UFScheduler::ufCreateThread(tid, ufsToStartWith);
+}

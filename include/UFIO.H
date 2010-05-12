@@ -112,6 +112,9 @@ struct UFIO
     void setUFIOScheduler(UFIOScheduler* ufios);
 
     UFSleepInfo*                _sleepInfo;
+
+    static void ufCreateThreadWithIO(pthread_t* tid, std::list<UF*>* ufsToStartWith);
+
 protected:
     int                         _fd;
     unsigned int                _errno;
@@ -220,5 +223,18 @@ inline void EpollUFIOScheduler::releaseSleepInfo(UFSleepInfo& ufsi)
 {
     _availableSleepInfo.push_back(&ufsi);
 }
+
+struct IORunner : public UF
+{
+    void run();
+    IORunner(bool registerMe = false)
+    {
+        if(registerMe)
+            _myLoc = UFFactory::getInstance()->registerFunc((UF*)this);
+    }
+    UF* createUF() { return new IORunner(); }
+    static IORunner* _self;
+    static int _myLoc;
+};
 
 #endif

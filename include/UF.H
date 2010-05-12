@@ -50,6 +50,7 @@ struct UF
     void                 yield();
     ///must be called after the fiber is added to a scheduler
     void                 usleep(unsigned long long int sleepAmtInUs);
+    static void          gusleep(unsigned long long int sleepAmtInUs);
     ///simply block the fiber
     void                 block();
 
@@ -168,18 +169,21 @@ struct UFScheduler
     const ucontext_t& getMainContext() const;
     void setSpecific(void* args);
     void* getSpecific() const;
-    void setExit(bool exit = true);
+    static void setExit(bool exit = true);
+    void setExitJustMe(bool exit = true);
 
     ///the variable that says whether the scheduler should be handling the sleep or
     //if its handled w/in the UserFabrics
     void*                       (*_notifyFunc)(void*);
     void*                       _notifyArgs;
 
-
     //to allow to identify the thread running now
     static pthread_key_t        _specific_key;
 
+    static void ufCreateThread(pthread_t* tid, std::list<UF*>* ufsToStartWith);
+
     static bool                 _exit;
+    bool                        _exitJustMe;
 protected:
     UF*                         _currentFiber;
     ucontext_t                  _mainContext;
@@ -214,10 +218,16 @@ inline const ucontext_t& UFScheduler::getMainContext() const { return _mainConte
 inline void UFScheduler::setSpecific(void* args) { _specific = args; }
 inline void* UFScheduler::getSpecific() const { return _specific; }
 inline void UFScheduler::setExit(bool exit) { _exit = exit; }
+inline void UFScheduler::setExitJustMe(bool exit) { _exitJustMe = exit; }
 
 inline UFScheduler* UF::getParentScheduler() const { return _parentScheduler; }
 
 inline void UF::waitOnLock() { block(); }
+
+inline void UF::gusleep(unsigned long long int sleepAmtInUs)
+{
+    UFScheduler::getUFScheduler()->getRunningFiberOnThisThread()->usleep(sleepAmtInUs);
+}
 
 inline void UF::usleep(unsigned long long int sleepAmtInUs)
 {
