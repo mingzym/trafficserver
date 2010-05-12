@@ -13,7 +13,6 @@
 #include <ucontext.h>
 #include <pthread.h>
 
-
 using namespace std;
 namespace std { using namespace __gnu_cxx; }
 
@@ -135,6 +134,8 @@ protected:
 typedef std::multimap<unsigned long long int, UF*> MapTimeUF;
 //typedef std::map<pthread_t,UFScheduler*> ThreadUFSchedulerMap;
 typedef hash_map<pthread_t, UFScheduler*, hash<uintptr_t> > ThreadUFSchedulerMap;
+
+struct UFConnectionPool;
 struct UFScheduler
 {
     friend class UF;
@@ -211,6 +212,8 @@ public:
     std::vector<long long> _stats;
     UFMutex _stats_lock;
 
+    // connection pool
+    UFConnectionPool *_conn_pool;
 };
 
 inline UF* UFScheduler::getRunningFiberOnThisThread(){ return _currentFiber; }

@@ -11,7 +11,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
-
+#include "UF.H"
 
 class StIpInfo;
 class UFConnectionGroupInfo;
@@ -24,7 +24,7 @@ public:
 
     // Call init before thread creation
     static void init();
-    
+
     unsigned int loadConfigFile(const std::string& fileName);
     unsigned int loadConfigFile(const std::string& fileName, int maxSimultaneousConns);
 
@@ -36,12 +36,26 @@ public:
     void setTimeoutIP(int timeoutIn); ///how long to timeout an ip that we cant connect to (is not responding)
     std::string fillInfo(std::string& data, bool detailed = false) const;
     double getGroupAvailability(const std::string& name) const;
+    void clearBadConnections();
 
     //TODO - get stats & detailed stats info
 protected:
 
     UFConnectionPoolImpl*           impl;
 
+};
+
+struct UFConnectionPoolCleaner : public UF
+{
+    void run();
+    UFConnectionPoolCleaner (bool registerMe = false) : _conn_pool(NULL)
+    {
+//        if(registerMe)
+//            _myLoc = UFFactory::getInstance()->registerFunc((UF*)this);
+    }
+
+    UF* createUF() { return new UFConnectionPoolCleaner; }
+    UFConnectionPool* _conn_pool;
 };
 
 namespace StringUtil

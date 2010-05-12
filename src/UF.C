@@ -1,4 +1,6 @@
 #include "UF.H"
+#include "UFConnectionPool.H"
+
 #include <string.h>
 
 #include <iostream>
@@ -110,6 +112,7 @@ UFScheduler::UFScheduler()
     _exitJustMe = false;
     _specific = 0;
     _currentFiber = 0;
+    _conn_pool = new UFConnectionPool;
 
     if(_inThreadedMode)
     {
@@ -154,6 +157,7 @@ UFScheduler::UFScheduler()
 UFScheduler::~UFScheduler()
 {
     pthread_key_delete(_specific_key);
+    delete _conn_pool;
 }
 
 
@@ -256,6 +260,12 @@ void UFScheduler::runScheduler()
     struct timeval now;
     struct timeval start,finish;
     gettimeofday(&start, 0);
+
+    // Add connection pool cleanup fiber
+    UFConnectionPoolCleaner *conn_pool_cleanup_fiber = new UFConnectionPoolCleaner;
+    conn_pool_cleanup_fiber->_conn_pool = _conn_pool;
+    addFiberToScheduler(conn_pool_cleanup_fiber);
+    
     while(!_exitJustMe && !_exit)
     {
         UFList::iterator beg = _activeRunningList.begin();

@@ -1,10 +1,10 @@
 CPP=c++
-BUILD_FLAGS=-g -O3 -Wall -DPIPE_NOT_EFD -Wno-deprecated -m32
+BUILD_FLAGS=-g -O3 -Wall -DPIPE_NOT_EFD -Wno-deprecated
 ARCH=x86-64
 
 all:	ufHTTPServer
 
-ufHTTPServer.o:	ufHTTPServer.C
+ufHTTPServer.o:	ufHTTPServer.C lib/libUF.a
 	$(CPP) $(BUILD_FLAGS) -c -I./include -o ufHTTPServer.o ufHTTPServer.C -march=$(ARCH)
 
 ufHTTPServer:	ufHTTPServer.o
