@@ -1,14 +1,18 @@
-CPP=c++
-BUILD_FLAGS=-g -O3 -Wall -DPIPE_NOT_EFD -Wno-deprecated
-ARCH=x86-64
+CXXFLAGS=-g -O3 -Wall -Wno-deprecated -march=x86-64
+CPPFLAGS=-DPIPE_NOT_EFD -I./include
+LDFLAGS=-L./lib -lUF -lpthread
 
-all:	ufHTTPServer
+.PHONY: all clean lib
 
-ufHTTPServer.o:	ufHTTPServer.C lib/libUF.a
-	$(CPP) $(BUILD_FLAGS) -c -I./include -o ufHTTPServer.o ufHTTPServer.C -march=$(ARCH)
+all: ufHTTPServer
 
-ufHTTPServer:	ufHTTPServer.o
-	$(CPP) $(BUILD_FLAGS) -o ufHTTPServer ufHTTPServer.o -L./lib -lUF -lpthread -march=$(ARCH)
+lib:
+	$(MAKE) -C src all
+
+ufHTTPServer:	lib ufHTTPServer.C
+	$(CXX) -o $@ $(CPPFLAGS) $(CXXFLAGS) ufHTTPServer.C $(LDFLAGS)
 
 clean: 
-	rm *.o ufHTTPServer
+	$(MAKE) -C src clean
+	$(RM) *.o ufHTTPServer
+
