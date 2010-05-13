@@ -114,6 +114,7 @@ struct UFIO
     UFSleepInfo*                _sleepInfo;
 
     static void ufCreateThreadWithIO(pthread_t* tid, std::list<UF*>* ufsToStartWith);
+    static UFIOScheduler* getUFIOS();
 
 protected:
     int                         _fd;
@@ -129,7 +130,6 @@ protected:
 
     int                         _lastEpollFlag;
     bool                        _amtReadLastTimeEqualToAskedAmt;
-    static UFIOScheduler* getUFIOS();
 };
 inline unsigned int UFIO::getErrno() const { return _errno; }
 inline int UFIO::getFd() const { return _fd; }

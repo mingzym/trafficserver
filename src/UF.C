@@ -171,7 +171,7 @@ bool UFScheduler::addFiberToScheduler(UF* uf, pthread_t tid)
     }
 
     list<UF*> ufList;
-    ufList.push_front(uf);
+    ufList.push_back(uf);
     return addFibersToScheduler(ufList, tid);
 }
 
@@ -255,7 +255,6 @@ void UFScheduler::runScheduler()
 
     _amtToSleep = DEFAULT_SLEEP_IN_USEC;
     bool ranGetTimeOfDay = false;
-    bool firstRun = true;
 
     UFList::iterator beg;
     struct timeval now;
@@ -297,33 +296,7 @@ void UFScheduler::runScheduler()
         }
 
 
-        //check if some other thread has nominated some user fiber to be
-        //added to this thread's list -
-        //can happen in the foll. situations
-        //1. the main thread is adding a new user fiber
-        //2. some fiber has requested to move to another thread
-        if(!_nominateToAddToActiveRunningList.empty() /*TODO: take this out later w/ the atomic size count*/ &&
-           _inThreadedMode)
-
-        {
-            //TODO: do atomic comparison to see if there is anything in 
-            //_nominateToAddToActiveRunningList before getting the lock
-            pthread_mutex_lock(&_mutexToNominateToActiveList);
-            UFList::iterator beg = _nominateToAddToActiveRunningList.begin();
-            for(; beg != _nominateToAddToActiveRunningList.end(); )
-            {
-                UF* uf = *beg;
-                if(uf->_parentScheduler)
-                    _activeRunningList.push_back(uf);
-                else //adding a new fiber
-                    addFiberToScheduler(uf, 0);
-                beg = _nominateToAddToActiveRunningList.erase(beg);
-            }
-
-            pthread_mutex_unlock(&_mutexToNominateToActiveList);
-        }
-
-
+        //check the sleep queue
         ranGetTimeOfDay = false;
         _amtToSleep = DEFAULT_SLEEP_IN_USEC;
         //pick up the fibers that may have completed sleeping
@@ -333,28 +306,54 @@ void UFScheduler::runScheduler()
             gettimeofday(&now, 0);
             ranGetTimeOfDay = true;
             timeNow = (now.tv_sec*1000000)+now.tv_usec;
-            firstRun = true;
             for(MapTimeUF::iterator beg = _sleepList.begin(); beg != _sleepList.end(); )
             {
                 //TODO: has to be cleaned up
                 //1. see if anyone has crossed the sleep timer - add them to the active list
                 if(beg->first <= timeNow) //sleep time is over
                 {
-                    _activeRunningList.push_front(beg->second);
+                    _activeRunningList.push_front(beg->second); //putting to the front - so that it gets evaluated before anything else
                     _sleepList.erase(beg);
                     beg = _sleepList.begin();
                     continue;
                 }
                 else
                 {
-                    if(firstRun)
-                        _amtToSleep = beg->first-timeNow;
+                    _amtToSleep = beg->first-timeNow;
                     break;
                 }
-                firstRun = false;
                 ++beg;
             }
         }
+
+
+        //check if some other thread has nominated some user fiber to be
+        //added to this thread's list -
+        //can happen in the foll. situations
+        //1. the main thread is adding a new user fiber
+        //2. some fiber has requested to move to another thread
+        if(!_nominateToAddToActiveRunningList.empty() /*TODO: take this out later w/ the atomic size count*/ &&
+           _inThreadedMode)
+
+        {
+            _amtToSleep = 0;
+            //TODO: do atomic comparison to see if there is anything in 
+            //_nominateToAddToActiveRunningList before getting the lock
+            pthread_mutex_lock(&_mutexToNominateToActiveList);
+            UFList::iterator beg = _nominateToAddToActiveRunningList.begin();
+            for(; beg != _nominateToAddToActiveRunningList.end(); )
+            {
+                UF* uf = *beg;
+                if(uf->_parentScheduler)
+                    _activeRunningList.push_front(uf);
+                else //adding a new fiber
+                    addFiberToScheduler(uf, 0);
+                beg = _nominateToAddToActiveRunningList.erase(beg);
+            }
+
+            pthread_mutex_unlock(&_mutexToNominateToActiveList);
+        }
+
 
         //see if there is anything to do or is it just sleeping time now
         if(!_notifyFunc && _activeRunningList.empty() && !_exit)

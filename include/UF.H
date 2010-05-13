@@ -149,9 +149,10 @@ struct UFScheduler
     //call this fxn the first time you're adding a UF 
     //(not after that - currently cant move an existing UF to a different thread)
     bool addFiberToScheduler(UF* uf,      /* the UF to add */
-                                pthread_t tid = 0); /* the thread to add the UF to */
+                             pthread_t tid = 0); /* the thread to add the UF to */
     //add the fxn to add multiple ufs in one shot (if they're on one tid)
-    bool addFibersToScheduler(const std::list<UF*>& ufList, pthread_t tid = 0);
+    bool addFibersToScheduler(const std::list<UF*>& ufList, 
+                              pthread_t tid = 0);
 
 
 

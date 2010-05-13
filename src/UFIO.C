@@ -416,7 +416,7 @@ int UFIO::connect(const struct sockaddr *addr,
                TIME_IN_US timeout)
 {
     if(!isSetup()) //create the socket and make the socket non-blocking
-        return false;
+        return -1;
 
 
     //find the scheduler for this request
@@ -917,12 +917,13 @@ void EpollUFIOScheduler::waitForEvents(TIME_IN_US timeToWait)
             _uf->yield();
         }
 
+        amtToSleep = (amtToSleep > 1000 ? (int)(amtToSleep/1000) : 1); //let epoll sleep for atleast 1ms
         if(amtToSleep > ufs->getAmtToSleep())
             amtToSleep = ufs->getAmtToSleep();
         nfds = ::epoll_wait(_epollFd, 
                             _epollEventStruct, 
                             _maxFds, 
-                            (amtToSleep > 1000 ? (int)(amtToSleep/1000) : 1)); //sleep for atleast 1ms
+                            amtToSleep);
         if(nfds > 0)
         {
             //for each of the fds that had activity activate them
