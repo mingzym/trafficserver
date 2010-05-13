@@ -13,16 +13,16 @@ all:	libUF.a
 UF.o:	UF.C $(INCLUDE_DIR)/UF.H
 	$(CPP) $(BUILD_FLAGS) -c -o $(LIB)/UF.o UF.C -I../include -march=$(ARCH) 
 
-UFIO.o:	UFIO.C $(INCLUDE_DIR)/UFIO.H
+UFIO.o:	UFIO.C $(INCLUDE_DIR)/UFIO.H $(INCLUDE_DIR)/UF.H
 	$(CPP) $(BUILD_FLAGS) -c -o $(LIB)/UFIO.o UFIO.C $(INCLUDE) -march=$(ARCH)
 
-UFStatSystem.o: UFStatSystem.C $(INCLUDE_DIR)/UFStatSystem.H
+UFStatSystem.o: UFStatSystem.C $(INCLUDE_DIR)/UFStatSystem.H $(INCLUDE_DIR)/UFIO.H $(INCLUDE_DIR)/UF.H
 	$(CPP) $(BUILD_FLAGS) -c -o $(LIB)/UFStatSystem.o UFStatSystem.C $(INCLUDE) -march=$(ARCH)
 
-UFServer.o: UFServer.C $(INCLUDE_DIR)/UFServer.H
+UFServer.o: UFServer.C $(INCLUDE_DIR)/UFServer.H $(INCLUDE_DIR)/UFStatSystem.H $(INCLUDE_DIR)/UFIO.H $(INCLUDE_DIR)/UF.H
 	$(CPP) $(BUILD_FLAGS) -c -o $(LIB)/UFServer.o UFServer.C $(INCLUDE) -march=$(ARCH)
 
-UFConnectionPoolImpl.o: UFConnectionPoolImpl.C $(INCLUDE_DIR)/UFConnectionPool.H UFConnectionPoolImpl.H
+UFConnectionPoolImpl.o: UFConnectionPoolImpl.C $(INCLUDE_DIR)/UFConnectionPool.H UFConnectionPoolImpl.H $(INCLUDE_DIR)/UFIO.H $(INCLUDE_DIR)/UF.H
 	$(CPP) $(BUILD_FLAGS) -c -o $(LIB)/UFConnectionPoolImpl.o UFConnectionPoolImpl.C $(INCLUDE) -march=$(ARCH)
 
 libUF.a:	UF.o UFIO.o UFStatSystem.o UFServer.o UFConnectionPoolImpl.o

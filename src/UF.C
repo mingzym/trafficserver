@@ -152,6 +152,7 @@ UFScheduler::UFScheduler()
     _notifyArgs = 0;
 
     pthread_setspecific(_specific_key, this);
+    _amtToSleep = 0;
 }
 
 UFScheduler::~UFScheduler()
@@ -252,7 +253,7 @@ void UFScheduler::runScheduler()
 {
     errno = 0;
 
-    unsigned long long int amtToSleep = DEFAULT_SLEEP_IN_USEC;
+    _amtToSleep = DEFAULT_SLEEP_IN_USEC;
     bool ranGetTimeOfDay = false;
     bool firstRun = true;
 
@@ -260,6 +261,7 @@ void UFScheduler::runScheduler()
     struct timeval now;
     struct timeval start,finish;
     gettimeofday(&start, 0);
+    unsigned long long int timeNow = 0;
 
     // Add connection pool cleanup fiber
     UFConnectionPoolCleaner *conn_pool_cleanup_fiber = new UFConnectionPoolCleaner;
@@ -323,14 +325,14 @@ void UFScheduler::runScheduler()
 
 
         ranGetTimeOfDay = false;
-        amtToSleep = DEFAULT_SLEEP_IN_USEC;
+        _amtToSleep = DEFAULT_SLEEP_IN_USEC;
         //pick up the fibers that may have completed sleeping
         //look into the sleep list;
         if(!_sleepList.empty())
         {
             gettimeofday(&now, 0);
             ranGetTimeOfDay = true;
-            unsigned long long int timeNow = (now.tv_sec*1000000)+now.tv_usec;
+            timeNow = (now.tv_sec*1000000)+now.tv_usec;
             firstRun = true;
             for(MapTimeUF::iterator beg = _sleepList.begin(); beg != _sleepList.end(); )
             {
@@ -338,7 +340,7 @@ void UFScheduler::runScheduler()
                 //1. see if anyone has crossed the sleep timer - add them to the active list
                 if(beg->first <= timeNow) //sleep time is over
                 {
-                    _activeRunningList.push_back(beg->second);
+                    _activeRunningList.push_front(beg->second);
                     _sleepList.erase(beg);
                     beg = _sleepList.begin();
                     continue;
@@ -346,7 +348,7 @@ void UFScheduler::runScheduler()
                 else
                 {
                     if(firstRun)
-                        amtToSleep = beg->first-timeNow;
+                        _amtToSleep = beg->first-timeNow;
                     break;
                 }
                 firstRun = false;
@@ -360,8 +362,8 @@ void UFScheduler::runScheduler()
             if(_inThreadedMode) //go to conditional wait (in threaded mode)
             {
                 struct timespec ts;
-                unsigned long long int nSecToIncrement = (int)(amtToSleep/1000000);
-                unsigned long long int nUSecToIncrement = (int)(amtToSleep%1000000);
+                unsigned long long int nSecToIncrement = (int)(_amtToSleep/1000000);
+                unsigned long long int nUSecToIncrement = (int)(_amtToSleep%1000000);
                 if(!ranGetTimeOfDay)
                     gettimeofday(&now, 0);
                 ts.tv_sec = now.tv_sec + nSecToIncrement;
@@ -373,7 +375,7 @@ void UFScheduler::runScheduler()
                 pthread_mutex_unlock(&_mutexToNominateToActiveList);
             }
             else //sleep in non-threaded mode
-                usleep(amtToSleep);
+                usleep(_amtToSleep);
         }
     }
     gettimeofday(&finish, 0);

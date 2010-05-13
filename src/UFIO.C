@@ -900,9 +900,15 @@ void EpollUFIOScheduler::waitForEvents(TIME_IN_US timeToWait)
     IntUFIOMap::iterator index;
     UFIO* ufio = 0;
     UF* uf = 0;
-    unsigned int amtToSleep = timeToWait;
+    unsigned long long int amtToSleep = timeToWait;
     int i = 0;
     _interruptedByEventFd = false;
+    UFScheduler* ufs = _uf->getParentScheduler();
+    if(!ufs)
+    {
+        cerr<<"epoll scheduler has to be connected to some scheduler"<<endl;
+        return;
+    }
     while(1)
     {
         if(_interruptedByEventFd) //this is so that the last interruption gets handled right away
@@ -911,6 +917,8 @@ void EpollUFIOScheduler::waitForEvents(TIME_IN_US timeToWait)
             _uf->yield();
         }
 
+        if(amtToSleep > ufs->getAmtToSleep())
+            amtToSleep = ufs->getAmtToSleep();
         nfds = ::epoll_wait(_epollFd, 
                             _epollEventStruct, 
                             _maxFds, 
@@ -930,7 +938,7 @@ void EpollUFIOScheduler::waitForEvents(TIME_IN_US timeToWait)
                         exit(1);
                     }
                     //activate the fiber
-                    uf->getParentScheduler()->addFiberToScheduler(uf, 0);
+                    ufs->addFiberToScheduler(uf, 0);
                 }
                 else
                 {

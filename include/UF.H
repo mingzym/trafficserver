@@ -170,6 +170,7 @@ struct UFScheduler
     const ucontext_t& getMainContext() const;
     void setSpecific(void* args);
     void* getSpecific() const;
+    unsigned long long int getAmtToSleep() const;
     static void setExit(bool exit = true);
     void setExitJustMe(bool exit = true);
 
@@ -200,6 +201,9 @@ protected:
 
     //the sleep tree
     MapTimeUF                   _sleepList;
+    //store the shortest sleep interval
+    unsigned long long int      _amtToSleep;
+
 
     //store thread specific content
     void*                       _specific;
@@ -216,6 +220,7 @@ public:
     UFConnectionPool *_conn_pool;
 };
 
+inline unsigned long long int UFScheduler::getAmtToSleep() const { return _amtToSleep; }
 inline UF* UFScheduler::getRunningFiberOnThisThread(){ return _currentFiber; }
 inline const ucontext_t& UFScheduler::getMainContext() const { return _mainContext; };
 inline void UFScheduler::setSpecific(void* args) { _specific = args; }
