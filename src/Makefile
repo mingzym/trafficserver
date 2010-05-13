@@ -1,33 +1,34 @@
-CPP=c++
-BUILD_FLAGS=-g -O3 -Wall -DPIPE_NOT_EFD -Wno-deprecated -m32
-ARCH=x86-64
-AR=ar -rv
+CXXFLAGS=-g -O3 -Wall -Wno-deprecated -march=x86-64
+CPPFLAGS=-DPIPE_NOT_EFD -I../include
+ARFLAGS=-rv
 RANLIB=ranlib
 INCLUDE_DIR=../include
-INCLUDE=-I../include
-LIB=../lib
+LIB_DIR=../lib
 
-all:	libUF.a
+.PHONY: all clean
 
+all: libUF.a
 
-UF.o:	UF.C $(INCLUDE_DIR)/UF.H
-	$(CPP) $(BUILD_FLAGS) -c -o $(LIB)/UF.o UF.C -I../include -march=$(ARCH) 
+UF.o: UF.C $(INCLUDE_DIR)/UF.H
+	$(CXX) -c $(CPPFLAGS) $(CXXFLAGS) -o $(LIB_DIR)/UF.o UF.C
 
-UFIO.o:	UFIO.C $(INCLUDE_DIR)/UFIO.H $(INCLUDE_DIR)/UF.H
-	$(CPP) $(BUILD_FLAGS) -c -o $(LIB)/UFIO.o UFIO.C $(INCLUDE) -march=$(ARCH)
+UFIO.o: UFIO.C $(INCLUDE_DIR)/UFIO.H
+	$(CXX) -c $(CPPFLAGS) $(CXXFLAGS) -o $(LIB_DIR)/UFIO.o UFIO.C
 
-UFStatSystem.o: UFStatSystem.C $(INCLUDE_DIR)/UFStatSystem.H $(INCLUDE_DIR)/UFIO.H $(INCLUDE_DIR)/UF.H
-	$(CPP) $(BUILD_FLAGS) -c -o $(LIB)/UFStatSystem.o UFStatSystem.C $(INCLUDE) -march=$(ARCH)
+UFStatSystem.o: UFStatSystem.C $(INCLUDE_DIR)/UFStatSystem.H
+	$(CXX) -c $(CPPFLAGS) $(CXXFLAGS) -o $(LIB_DIR)/UFStatSystem.o UFStatSystem.C
 
-UFServer.o: UFServer.C $(INCLUDE_DIR)/UFServer.H $(INCLUDE_DIR)/UFStatSystem.H $(INCLUDE_DIR)/UFIO.H $(INCLUDE_DIR)/UF.H
-	$(CPP) $(BUILD_FLAGS) -c -o $(LIB)/UFServer.o UFServer.C $(INCLUDE) -march=$(ARCH)
+UFServer.o: UFServer.C $(INCLUDE_DIR)/UFServer.H
+	$(CXX) -c $(CPPFLAGS) $(CXXFLAGS) -o $(LIB_DIR)/UFServer.o UFServer.C
 
-UFConnectionPoolImpl.o: UFConnectionPoolImpl.C $(INCLUDE_DIR)/UFConnectionPool.H UFConnectionPoolImpl.H $(INCLUDE_DIR)/UFIO.H $(INCLUDE_DIR)/UF.H
-	$(CPP) $(BUILD_FLAGS) -c -o $(LIB)/UFConnectionPoolImpl.o UFConnectionPoolImpl.C $(INCLUDE) -march=$(ARCH)
+UFConnectionPoolImpl.o: UFConnectionPoolImpl.C $(INCLUDE_DIR)/UFConnectionPool.H UFConnectionPoolImpl.H
+	$(CXX) -c $(CPPFLAGS) $(CXXFLAGS) -o $(LIB_DIR)/UFConnectionPoolImpl.o UFConnectionPoolImpl.C
 
-libUF.a:	UF.o UFIO.o UFStatSystem.o UFServer.o UFConnectionPoolImpl.o
-	$(AR) $(LIB)/libUF.a $(LIB)/UF.o $(LIB)/UFIO.o $(LIB)/UFStatSystem.o $(LIB)/UFServer.o $(LIB)/UFConnectionPoolImpl.o
-	$(RANLIB) $(LIB)/libUF.a
+libUF.a: UF.o UFIO.o UFStatSystem.o UFServer.o UFConnectionPoolImpl.o
+	$(AR) $(ARFLAGS) $(LIB_DIR)/libUF.a \
+    $(LIB_DIR)/UF.o $(LIB_DIR)/UFIO.o $(LIB_DIR)/UFStatSystem.o $(LIB_DIR)/UFServer.o $(LIB_DIR)/UFConnectionPoolImpl.o
+	$(RANLIB) $(LIB_DIR)/libUF.a
 
 clean: 
-	rm *.o *.a
+	$(RM) $(LIB_DIR)/*.o $(LIB_DIR)/*.a
+
