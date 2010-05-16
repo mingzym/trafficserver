@@ -39,8 +39,6 @@ public:
 protected:
     GroupIPMap                                  _groupIpMap;
     UFConnectionIpInfoMap                       _UFConnectionIpInfoMap;
-    UFMutex                                     _someConnectionAvailable;
-
 
     UFIO* createConnection(UFConnectionIpInfo* stIpInfo);
 };

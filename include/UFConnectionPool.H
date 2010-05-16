@@ -38,6 +38,9 @@ public:
     double getGroupAvailability(const std::string& name) const;
     void clearBadConnections();
 
+    static int MAX_SIMUL_CONNS_PER_HOST;
+    static int TIMEOUT_PER_REQUEST;
+    
     //TODO - get stats & detailed stats info
 protected:
 
@@ -48,14 +51,13 @@ protected:
 struct UFConnectionPoolCleaner : public UF
 {
     void run();
-    UFConnectionPoolCleaner (bool registerMe = false) : _conn_pool(NULL)
+    UFConnectionPoolCleaner (bool registerMe = false)
     {
 //        if(registerMe)
 //            _myLoc = UFFactory::getInstance()->registerFunc((UF*)this);
     }
 
     UF* createUF() { return new UFConnectionPoolCleaner; }
-    UFConnectionPool* _conn_pool;
 };
 
 namespace StringUtil
@@ -83,6 +85,7 @@ struct UFConnectionIpInfo
     UFIOIntMap          _currentlyAvailableConnections;
     UFIOIntMap          _currentlyUsedConnections;
     unsigned int        _inProcessCount;
+    UFMutex _someConnectionAvailable;
 };
 
 

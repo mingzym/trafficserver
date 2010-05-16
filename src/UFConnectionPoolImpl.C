@@ -197,8 +197,6 @@ UFIO* UFConnectionPoolImpl::getConnection(const std::string& groupName)
     return getConnection(groupName, false);
 }
 
-static int MAX_SIMUL_CONNS_PER_HOST = 5;
-static int TIMEOUT_PER_REQUEST = 10;
 UFConnectionGroupInfo* UFConnectionPoolImpl::addGroupImplicit(const std::string& groupName)
 {
     UFConnectionGroupInfo* group = new UFConnectionGroupInfo(groupName);
@@ -210,8 +208,8 @@ UFConnectionGroupInfo* UFConnectionPoolImpl::addGroupImplicit(const std::string&
     
     UFConnectionIpInfo* ip = new UFConnectionIpInfo(groupName,
                                                     true, 
-                                                    MAX_SIMUL_CONNS_PER_HOST,
-                                                    TIMEOUT_PER_REQUEST);
+                                                    UFConnectionPool::MAX_SIMUL_CONNS_PER_HOST,
+                                                    UFConnectionPool::TIMEOUT_PER_REQUEST);
     if(!ip)
     {
         cerr<<getpid()<<" "<<time(NULL)<<" couldnt create the ip obj"<<endl;
@@ -234,13 +232,17 @@ UFIO* UFConnectionPoolImpl::getConnection(const std::string& groupName, bool wai
     {
         cerr<<getpid()<<" "<<time(NULL)<<" "<<__LINE__<<" "<<"null group or didnt find group with name "<<groupName<<endl;
         groupInfo = addGroupImplicit(groupName);
-        if(!groupInfo)
+        if(!groupInfo) 
             return NULL;
     }
     else
     {
         groupInfo = (*foundItr).second;
     }
+
+    UFScheduler* this_thread_scheduler = UFScheduler::getUFScheduler(pthread_self());
+    UF* this_user_fiber = this_thread_scheduler->getRunningFiberOnThisThread();
+
 
 
     UFIO* returnConn = NULL;
@@ -283,94 +285,67 @@ UFIO* UFConnectionPoolImpl::getConnection(const std::string& groupName, bool wai
             continue;
         ipInfo->_timedOut = 0;
 
-        //3. pick a connection from the currently available conns
-        //   (if there are any available)
-        UFIOIntMap::iterator beg = ipInfo->_currentlyAvailableConnections.begin();
-        for(; beg != ipInfo->_currentlyAvailableConnections.end(); 
-              beg = ipInfo->_currentlyAvailableConnections.begin()  // we're resetting to the beginning to avoid
-                                                                    // the case of two threads ending up getting 
-                                                                    // the same connection
-           )
-        {
-            returnConn = NULL;
-            if(!((*beg).first))
-            {
-                ipInfo->_currentlyAvailableConnections.erase(beg);
-                cerr<<getpid()<<" "<<time(NULL)<<" "<<__LINE__<<" "<<"found null conn - removing that from currentlyAvailable"<<endl;
-                continue;
-            }
-            returnConn = (*beg).first;
-            //take the found connection away from the curentlyAvaliableConnections list
-            //since validConnection now actually checks to see the content thats within the channel to verify the validity of the connection
-            //it may be that the thread gets switched out and some other thread comes into this section
-            ipInfo->_currentlyAvailableConnections.erase(beg);
-            ipInfo->_currentlyUsedConnections[returnConn] = time(NULL);
-            break;
-        }
 
-        //4. if no connections are available then create a new connection if allowed
-        if(!returnConn)
-        {
-            bool getConnection = false;
+        while(1) {
+            if(ipInfo->_currentlyAvailableConnections.size()) {
+                //3. pick a connection from the currently available conns
 
-            if ((ipInfo->_maxSimultaneousConns < 0) || 
-                (ipInfo->_currentlyAvailableConnections.size() + ipInfo->_currentlyUsedConnections.size() + ipInfo->_inProcessCount < (unsigned int) ipInfo->_maxSimultaneousConns)
-               )
-                getConnection = true;
-            else if ( waitForConnection && 
-                      (ipInfo->_currentlyAvailableConnections.size() + ipInfo->_currentlyUsedConnections.size() + ipInfo->_inProcessCount >= (unsigned int) ipInfo->_maxSimultaneousConns)
+                UFIOIntMap::iterator beg = ipInfo->_currentlyAvailableConnections.begin();
+                for(; beg != ipInfo->_currentlyAvailableConnections.end(); 
+                    beg = ipInfo->_currentlyAvailableConnections.begin()  // we're resetting to the beginning to avoid
+                        // the case of two threads ending up getting 
+                        // the same connection
                     )
-            {
-                //wait for the signal to get pinged
-                //unsigned short int counter = 0;
-                //while(counter < MAX_WAIT_FOR_CONNECTION_TO_BE_AVAILABLE) //we only try for 10 times
-                while(true)
                 {
-                    if (ipInfo->_currentlyAvailableConnections.size() + ipInfo->_currentlyUsedConnections.size() + ipInfo->_inProcessCount
-                            >= (unsigned int) ipInfo->_maxSimultaneousConns)
+                    returnConn = NULL;
+                    if(!((*beg).first))
                     {
-                        UFScheduler* this_thread_scheduler = UFScheduler::getUFScheduler(pthread_self());
-                        UF* this_user_fiber = this_thread_scheduler->getRunningFiberOnThisThread();
-                        _someConnectionAvailable.lock(this_user_fiber);
-                        _someConnectionAvailable.condWait(this_user_fiber);
-                        _someConnectionAvailable.unlock(this_user_fiber);
+                        ipInfo->_currentlyAvailableConnections.erase(beg);
+                        cerr<<getpid()<<" "<<time(NULL)<<" "<<__LINE__<<" "<<"found null conn - removing that from currentlyAvailable"<<endl;
+                        continue;
+                    }
+                    returnConn = (*beg).first;
+                    //take the found connection away from the curentlyAvaliableConnections list
+                    //since validConnection now actually checks to see the content thats within the channel to verify the validity of the connection
+                    //it may be that the thread gets switched out and some other thread comes into this section
+                    ipInfo->_currentlyAvailableConnections.erase(beg);
+                    ipInfo->_currentlyUsedConnections[returnConn] = time(NULL);
+                    return returnConn;
+                }
+            }
+            else {
+                // if _maxSimultaneousConns is hit, wait for a connection to become available
+                if(ipInfo->_currentlyUsedConnections.size() + ipInfo->_inProcessCount >= (unsigned int) ipInfo->_maxSimultaneousConns) {
+                    // wait for a connection to be released
+                    ipInfo->_someConnectionAvailable.lock(this_user_fiber);
+                    ipInfo->_someConnectionAvailable.condWait(this_user_fiber);
+                    ipInfo->_someConnectionAvailable.unlock(this_user_fiber);
+                    continue;
+                }
+                else {
+                    // Create new connection
+                    ipInfo->_inProcessCount++;
+                    returnConn = createConnection(ipInfo);
+                    ipInfo->_inProcessCount--;
+                    if(returnConn)
+                    {
+                        time_t currTime = time(NULL);
+                        ipInfo->_currentlyUsedConnections[returnConn] = currTime;
+                        _UFConnectionIpInfoMap[returnConn] = make_pair(ipInfo, make_pair(true, currTime));
                     }
                     else
                     {
-                        getConnection = true; //this is here just so that if we ever go to the path of having a 
-                                              //max allowed waiting time - this var. will only get set if the 
-                                              //condition is met
-                        break;
+                        if((random() % 100) < PERCENT_LOGGING_SAMPLING)
+                            cerr<<getpid()<<" "<<time(NULL)<<" "<<__LINE__<<" "<<"couldnt create a connection to "<<ipInfo->_ip<<" "<<strerror(errno)<<endl;
                     }
-                }
-            }
-
-            if(getConnection)
-            {
-                ipInfo->_inProcessCount++;
-                returnConn = createConnection(ipInfo);
-                ipInfo->_inProcessCount--;
-                if(returnConn)
-                {
-                    time_t currTime = time(NULL);
-                    ipInfo->_currentlyUsedConnections[returnConn] = currTime;
-                    _UFConnectionIpInfoMap[returnConn] = make_pair(ipInfo, make_pair(true, currTime));
-                }
-                else
-                {
-                    if((random() % 100) < PERCENT_LOGGING_SAMPLING)
-                        cerr<<getpid()<<" "<<time(NULL)<<" "<<__LINE__<<" "<<"couldnt create a connection to "<<ipInfo->_ip<<" "<<strerror(errno)<<endl;
+                    
+                    return returnConn;
                 }
             }
         }
-
-        if(returnConn)
-            break;
     }
-
-
-    //5. return the found connection
-    return returnConn;
+    
+    return NULL;
 }
 
 UFIO* UFConnectionPoolImpl::createConnection(UFConnectionIpInfo* ipInfo)
@@ -385,8 +360,12 @@ UFIO* UFConnectionPoolImpl::createConnection(UFConnectionIpInfo* ipInfo)
         return NULL;
     }
 
-    ufio->connect((struct sockaddr *) &ipInfo->_sin, sizeof(ipInfo->_sin), 16000);
+    int rc = ufio->connect((struct sockaddr *) &ipInfo->_sin, sizeof(ipInfo->_sin), 1600000);
 
+    if(rc != 0) {
+        delete ufio;
+        return NULL;
+    }
     return ufio;
 }
 
@@ -422,6 +401,7 @@ void UFConnectionPoolImpl::clearBadConnections()
 
 void UFConnectionPoolImpl::releaseConnection(UFIO* ufIO, bool connOk)
 {
+    cerr << "UFConnectionPoolImpl::releaseConnection" << endl;
     if(!ufIO)
         return;
 
@@ -471,15 +451,14 @@ void UFConnectionPoolImpl::releaseConnection(UFIO* ufIO, bool connOk)
         _UFConnectionIpInfoMap.erase(ufIOIpInfoLocItr);
     }
 
-    //signal to all the waiting threads that there might have been some change
+    //signal to all the first waiting threads that there might be a connection available
     UFScheduler* this_thread_scheduler = UFScheduler::getUFScheduler(pthread_self());
     UF* this_user_fiber = this_thread_scheduler->getRunningFiberOnThisThread();
                         
-    _someConnectionAvailable.lock(this_user_fiber);
-    _someConnectionAvailable.broadcast();
-    _someConnectionAvailable.unlock(this_user_fiber);
+    ipInfo->_someConnectionAvailable.lock(this_user_fiber);
+    ipInfo->_someConnectionAvailable.signal();
+    ipInfo->_someConnectionAvailable.unlock(this_user_fiber);
 }
-
 
 const unsigned int PRINT_BUFFER_LENGTH = 256*1024;
 string UFConnectionPoolImpl::fillInfo(string& data, bool detailed) const
@@ -576,23 +555,21 @@ UFConnectionPoolImpl::~UFConnectionPoolImpl()
 
 void UFConnectionPoolCleaner::run()
 {
-    UF* uf = UFScheduler::getUF();
-    UFScheduler* ufs = uf->getParentScheduler();
+    UFScheduler *this_thread_scheduler = UFScheduler::getUFScheduler();
+    UF* this_uf = this_thread_scheduler->getRunningFiberOnThisThread();
     while(1)
     {
-        uf->usleep(300*1000*1000);
-        if(!_conn_pool)
+        this_uf->usleep(300*1000*1000);
+        if(!this_thread_scheduler->_conn_pool)
             break;
-        _conn_pool->clearBadConnections();
+        this_thread_scheduler->_conn_pool->clearBadConnections();
     }
-    ufs->setExit();
+    this_thread_scheduler->setExit();
 }
 
 UFConnectionPoolImpl::UFConnectionPoolImpl()
-{ 
-    // add fiber to monitor connections on thread
-    // if (!thread_create(runThreadToMontiorBadConnections, this, 0, 4*1024))
-    //    cerr<<"couldnt create thread to monitor bad connections"<<endl;
+{
+
 }
 
 void UFConnectionPoolImpl::init()
@@ -604,6 +581,9 @@ void UFConnectionPoolImpl::init()
         ranSrandom = true;
     }
 }
+
+int UFConnectionPool::MAX_SIMUL_CONNS_PER_HOST = 5;
+int UFConnectionPool::TIMEOUT_PER_REQUEST = 10;
 
 UFConnectionPool::UFConnectionPool() 
 { 

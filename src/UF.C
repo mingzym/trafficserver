@@ -96,7 +96,7 @@ bool UF::setup(void* stackPtr, size_t stackSize)
 
 ///////////////UFScheduler/////////////////////
 ThreadUFSchedulerMap UFScheduler::_threadUFSchedulerMap;
-pthread_mutex_t UFScheduler::_mutexToCheckFiberScheduerMap = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t UFScheduler::_mutexToCheckFiberSchedulerMap = PTHREAD_MUTEX_INITIALIZER;
 static pthread_key_t getThreadKey()
 {
     if(pthread_key_create(&UFScheduler::_specific_key, 0) != 0)
@@ -109,6 +109,7 @@ static pthread_key_t getThreadKey()
 pthread_key_t UFScheduler::_specific_key = getThreadKey();
 UFScheduler::UFScheduler()
 {
+    _earliestWakeUpFromSleep = 0;
     _exitJustMe = false;
     _specific = 0;
     _currentFiber = 0;
@@ -126,14 +127,14 @@ UFScheduler::UFScheduler()
     {
         pthread_t currThreadId = pthread_self();
 
-        pthread_mutex_lock(&_mutexToCheckFiberScheduerMap);
+        pthread_mutex_lock(&_mutexToCheckFiberSchedulerMap);
         if(_threadUFSchedulerMap.find(currThreadId) != _threadUFSchedulerMap.end())
         {
             cerr<<"cannot have more than one scheduler per thread"<<endl;
             exit(1);
         }
         _threadUFSchedulerMap[currThreadId] = this;
-        pthread_mutex_unlock(&_mutexToCheckFiberScheduerMap);
+        pthread_mutex_unlock(&_mutexToCheckFiberSchedulerMap);
     }
     else
     {
@@ -157,7 +158,7 @@ UFScheduler::UFScheduler()
 
 UFScheduler::~UFScheduler()
 {
-    pthread_key_delete(_specific_key);
+    //pthread_key_delete(_specific_key);
     delete _conn_pool;
 }
 
@@ -262,11 +263,6 @@ void UFScheduler::runScheduler()
     gettimeofday(&start, 0);
     unsigned long long int timeNow = 0;
 
-    // Add connection pool cleanup fiber
-    UFConnectionPoolCleaner *conn_pool_cleanup_fiber = new UFConnectionPoolCleaner;
-    conn_pool_cleanup_fiber->_conn_pool = _conn_pool;
-    addFiberToScheduler(conn_pool_cleanup_fiber);
-    
     while(!_exitJustMe && !_exit)
     {
         UFList::iterator beg = _activeRunningList.begin();
@@ -299,33 +295,6 @@ void UFScheduler::runScheduler()
         //check the sleep queue
         ranGetTimeOfDay = false;
         _amtToSleep = DEFAULT_SLEEP_IN_USEC;
-        //pick up the fibers that may have completed sleeping
-        //look into the sleep list;
-        if(!_sleepList.empty())
-        {
-            gettimeofday(&now, 0);
-            ranGetTimeOfDay = true;
-            timeNow = (now.tv_sec*1000000)+now.tv_usec;
-            for(MapTimeUF::iterator beg = _sleepList.begin(); beg != _sleepList.end(); )
-            {
-                //TODO: has to be cleaned up
-                //1. see if anyone has crossed the sleep timer - add them to the active list
-                if(beg->first <= timeNow) //sleep time is over
-                {
-                    _activeRunningList.push_front(beg->second); //putting to the front - so that it gets evaluated before anything else
-                    _sleepList.erase(beg);
-                    beg = _sleepList.begin();
-                    continue;
-                }
-                else
-                {
-                    _amtToSleep = beg->first-timeNow;
-                    break;
-                }
-                ++beg;
-            }
-        }
-
 
         //check if some other thread has nominated some user fiber to be
         //added to this thread's list -
@@ -336,7 +305,7 @@ void UFScheduler::runScheduler()
            _inThreadedMode)
 
         {
-            _amtToSleep = 0;
+            _amtToSleep = 0; //since we're adding new ufs to the list we dont need to sleep
             //TODO: do atomic comparison to see if there is anything in 
             //_nominateToAddToActiveRunningList before getting the lock
             pthread_mutex_lock(&_mutexToNominateToActiveList);
@@ -345,7 +314,7 @@ void UFScheduler::runScheduler()
             {
                 UF* uf = *beg;
                 if(uf->_parentScheduler)
-                    _activeRunningList.push_front(uf);
+                    _activeRunningList.push_back(uf);
                 else //adding a new fiber
                     addFiberToScheduler(uf, 0);
                 beg = _nominateToAddToActiveRunningList.erase(beg);
@@ -354,6 +323,38 @@ void UFScheduler::runScheduler()
             pthread_mutex_unlock(&_mutexToNominateToActiveList);
         }
 
+
+        //pick up the fibers that may have completed sleeping
+        //look into the sleep list;
+        if(!_sleepList.empty())
+        {
+            gettimeofday(&now, 0);
+            ranGetTimeOfDay = true;
+            timeNow = (now.tv_sec*1000000)+now.tv_usec;
+            if(timeNow >= _earliestWakeUpFromSleep) //dont go into this queue unless the time seen the last time has passed
+            {
+                for(MapTimeUF::iterator beg = _sleepList.begin(); beg != _sleepList.end(); )
+                {
+                    //TODO: has to be cleaned up
+                    //1. see if anyone has crossed the sleep timer - add them to the active list
+                    if(beg->first <= timeNow) //sleep time is over
+                    {
+                        _activeRunningList.push_back(beg->second);
+                        _sleepList.erase(beg);
+                        beg = _sleepList.begin();
+                        continue;
+                    }
+                    else
+                    {
+                        if(_amtToSleep) //since the nominate system might have turned off the sleep - we dont activate it again
+                            _amtToSleep = beg->first-timeNow; 
+                        _earliestWakeUpFromSleep = beg->first;
+                        break;
+                    }
+                    ++beg;
+                }
+            }
+        }
 
         //see if there is anything to do or is it just sleeping time now
         if(!_notifyFunc && _activeRunningList.empty() && !_exit)
@@ -390,14 +391,14 @@ UFScheduler* UFScheduler::getUFScheduler(pthread_t tid)
     if(!tid || tid == pthread_self())
         return (UFScheduler*)pthread_getspecific(_specific_key);
 
-    pthread_mutex_lock(&_mutexToCheckFiberScheduerMap);
+    pthread_mutex_lock(&_mutexToCheckFiberSchedulerMap);
     ThreadUFSchedulerMap::const_iterator index = _threadUFSchedulerMap.find(tid);
     if(index == _threadUFSchedulerMap.end())
     {
-        pthread_mutex_unlock(&_mutexToCheckFiberScheduerMap);
+        pthread_mutex_unlock(&_mutexToCheckFiberSchedulerMap);
         return 0;
     }
-    pthread_mutex_unlock(&_mutexToCheckFiberScheduerMap);
+    pthread_mutex_unlock(&_mutexToCheckFiberSchedulerMap);
 
     return const_cast<UFScheduler*>(index->second);
 }
@@ -442,10 +443,7 @@ void* setupThread(void* args)
 
     list<UF*>* ufsToStartWith = (list<UF*>*) args;
     UFScheduler ufs;
-    for(list<UF*>::iterator beg = ufsToStartWith->begin();
-        beg != ufsToStartWith->end();
-        ++beg)
-        ufs.addFiberToScheduler(*beg);
+    ufs.addFibersToScheduler(*ufsToStartWith, 0);
     delete ufsToStartWith;
 
     //run the scheduler

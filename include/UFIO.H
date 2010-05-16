@@ -187,15 +187,16 @@ struct EpollUFIOScheduler : public UFIOScheduler
     bool                            _interruptedByEventFd;
 
 protected:
-    UF*                 _uf;
-    int                 _epollFd;
-    unsigned int        _maxFds;
-    struct epoll_event* _epollEventStruct;
-    IntUFIOMap          _intUFIOMap;
-    bool                _alreadySetup;
+    UF*                             _uf;
+    int                             _epollFd;
+    unsigned int                    _maxFds;
+    struct epoll_event*             _epollEventStruct;
+    IntUFIOMap                      _intUFIOMap;
+    bool                            _alreadySetup;
 
 
-    MapTimeUFIO         _sleepList;
+    MapTimeUFIO                     _sleepList;
+    unsigned long long int          _earliestWakeUpFromSleep;
 
     bool addToScheduler(UFIO* ufio, 
                         void* inputInfo /*flags to identify how ot add*/, 

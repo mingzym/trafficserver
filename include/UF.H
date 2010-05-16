@@ -157,7 +157,7 @@ struct UFScheduler
 
 
     static ThreadUFSchedulerMap  _threadUFSchedulerMap;
-    static pthread_mutex_t       _mutexToCheckFiberScheduerMap;
+    static pthread_mutex_t       _mutexToCheckFiberSchedulerMap;
             
     //returns the fiber scheduler on this thread or other threads;
     static UFScheduler*          getUFScheduler(pthread_t tid = 0); 
@@ -202,6 +202,7 @@ protected:
 
     //the sleep tree
     MapTimeUF                   _sleepList;
+    unsigned long long int      _earliestWakeUpFromSleep;
     //store the shortest sleep interval
     unsigned long long int      _amtToSleep;
 
@@ -248,8 +249,12 @@ inline void UF::usleep(unsigned long long int sleepAmtInUs)
 
     struct timeval now;
     gettimeofday(&now, 0);
-    unsigned long long int timeNow = now.tv_sec*1000000+now.tv_usec;
-    _parentScheduler->_sleepList.insert(std::make_pair((timeNow+sleepAmtInUs), this));
+    unsigned long long int timeToWakeUp = now.tv_sec*1000000+now.tv_usec + sleepAmtInUs;
+    if( _parentScheduler->_earliestWakeUpFromSleep > timeToWakeUp ||
+       !_parentScheduler->_earliestWakeUpFromSleep)
+        _parentScheduler->_earliestWakeUpFromSleep = timeToWakeUp;
+
+    _parentScheduler->_sleepList.insert(std::make_pair(timeToWakeUp, this));
     block();
 }
 

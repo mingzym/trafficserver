@@ -99,42 +99,6 @@ struct AcceptRunner : public UF
 int AcceptRunner::_myLoc = -1;
 AcceptRunner* AcceptRunner::_self = new AcceptRunner(true);
 
-static void* acceptThreadStart(void* args)
-{
-    if(!args)
-        return 0;
-
-    UFServer* ufserver = (UFServer*) args;
-
-    UFScheduler ufs;
-    //add the io scheduler
-    ufs.addFiberToScheduler(new IORunner());
-    //add the accept port fiber
-    UF* uf = new AcceptRunner();
-    if(!uf)
-        return 0;
-    uf->_startingArgs = args;
-    ufs.addFiberToScheduler(uf);
-
-    ufserver->addThread("ACCEPT", 0);
-    ufs.runScheduler();
-    return 0;
-}
-
-static void* ioThreadStart(void* args)
-{
-    if(!args)
-        return 0;
-
-    UFScheduler ufs;
-    //add the io scheduler
-    ufs.addFiberToScheduler(new IORunner());
-
-    ((UFServer*) args)->addThread("NETIO", &ufs);
-    ufs.runScheduler();
-    return 0;
-}
-
 void UFServer::startThreads()
 {
     preThreadCreation();
@@ -142,39 +106,42 @@ void UFServer::startThreads()
     MAX_THREADS_ALLOWED = (MAX_THREADS_ALLOWED ? MAX_THREADS_ALLOWED : 1);
     MAX_ACCEPT_THREADS_ALLOWED = (MAX_ACCEPT_THREADS_ALLOWED ? MAX_ACCEPT_THREADS_ALLOWED : 1);
 
-    pthread_t* thread = new pthread_t[MAX_THREADS_ALLOWED+MAX_ACCEPT_THREADS_ALLOWED];
-    pthread_attr_t attr;
-    pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
-
-    //start the IO threads
     unsigned int i = 0;
+    pthread_t* thread = new pthread_t[MAX_THREADS_ALLOWED+MAX_ACCEPT_THREADS_ALLOWED];
+    //start the IO threads
     for(; i<MAX_THREADS_ALLOWED; i++)
     {
-        if(pthread_create(&(thread[i]), &attr, ioThreadStart, this) != 0)
+        UFIO::ufCreateThreadWithIO(&(thread[i]), new list<UF*>());
+        usleep(5000); //TODO: avoid the need for threadChooser to have a mutex - change to cond. var later
+        //add the io threads to the thread chooser
+        UFScheduler* ufs = UFScheduler::getUFScheduler(thread[i]);
+        if(!ufs)
         {
-            cerr<<"couldnt create thread "<<strerror(errno)<<endl;
+            cerr<<"didnt get scheduler for tid = "<<thread[i]<<endl;
             exit(1);
         }
-        usleep(500); //TODO: avoid the need for threadChooser to have a mutex
+        addThread("NETIO", ufs, thread[i]);
     }
 
     //start the stats thread
     UFStatSystem::init(this);
 
-    usleep(1000); //wait before starting the accept thread //TODO: change to cond signal later
-
     preAccept();
-
     //start the accept thread
     for(; i<MAX_ACCEPT_THREADS_ALLOWED+MAX_THREADS_ALLOWED; i++)
     {
-        if(pthread_create(&(thread[i]), &attr, acceptThreadStart, this) != 0)
-        {
-            cerr<<"couldnt create accept thread "<<strerror(errno)<<endl;
-            exit(1);
-        }
+        AcceptRunner* ar = new AcceptRunner();
+        ar->_startingArgs = this;
+        list<UF*>* ufsToAdd = new list<UF*>();
+        ufsToAdd->push_back(ar);
+        UFIO::ufCreateThreadWithIO(&(thread[i]), ufsToAdd);
+
+        usleep(5000); //TODO: let the thread finish initializing 
+        addThread("ACCEPT", 0, thread[i]);
     }
+
+    cerr<<"starting server"<<endl;
+
 
     //wait for the threads to finish
     void* status;
@@ -260,9 +227,11 @@ void UFServer::run()
     }
 }
 
-void UFServer::addThread(const std::string& type, UFScheduler* ufScheduler)
+void UFServer::addThread(const std::string& type, UFScheduler* ufScheduler, pthread_t tid)
 {
-    pthread_t tid = pthread_self();
+    if(!tid)
+        tid = pthread_self();
+
     StringThreadMapping::iterator index = _threadList.find(type);
     if(index == _threadList.end())
     {

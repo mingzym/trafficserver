@@ -1,4 +1,5 @@
 #include "UFIO.H"
+#include "UFConnectionPool.H"
 #include <netdb.h>
 #include <sys/socket.h> 
 #include <sys/time.h> 
@@ -17,7 +18,6 @@
 #include <errno.h>
 #include <string>
 #include <string.h>
-
 using namespace std;
 
 static int makeSocketNonBlocking(int fd)
@@ -620,6 +620,7 @@ EpollUFIOScheduler::EpollUFIOScheduler(UF* uf, unsigned int maxFds)
     _epollFd = -1;
     _epollEventStruct = 0;
     _alreadySetup = false;
+    _earliestWakeUpFromSleep = 0;
 }
 
 EpollUFIOScheduler::~EpollUFIOScheduler()
@@ -698,7 +699,6 @@ bool EpollUFIOScheduler::addToScheduler(UFIO* ufio, void* inputInfo, TIME_IN_US 
     {
         struct timeval now;
         gettimeofday(&now, 0);
-        unsigned long long int timeNow = now.tv_sec*1000000+now.tv_usec;
         UFSleepInfo* ufsi = getSleepInfo();
         if(!ufsi)
         {
@@ -707,7 +707,11 @@ bool EpollUFIOScheduler::addToScheduler(UFIO* ufio, void* inputInfo, TIME_IN_US 
         }
         ufsi->_ufio = ufio;
         ufio->_sleepInfo = ufsi;
-        _sleepList.insert(std::make_pair((timeNow+to), ufsi));
+        unsigned long long int timeToWakeUp = now.tv_sec*1000000+now.tv_usec + to;
+        if(_earliestWakeUpFromSleep > timeToWakeUp ||
+           !_earliestWakeUpFromSleep)
+            _earliestWakeUpFromSleep = timeToWakeUp;
+        _sleepList.insert(std::make_pair(timeToWakeUp, ufsi));
     }
 
     ufio->getUF()->block(); //switch context till someone wakes me up
@@ -897,13 +901,16 @@ void EpollUFIOScheduler::waitForEvents(TIME_IN_US timeToWait)
 
     int nfds;
     struct timeval now;
+    unsigned long long int timeNow = 0;
     IntUFIOMap::iterator index;
     UFIO* ufio = 0;
     UF* uf = 0;
     unsigned long long int amtToSleep = timeToWait;
+    unsigned long long int ufsAmtToSleep = 0;
     int i = 0;
     _interruptedByEventFd = false;
     UFScheduler* ufs = _uf->getParentScheduler();
+    list<UF*> ufsToAddToScheduler;
     if(!ufs)
     {
         cerr<<"epoll scheduler has to be connected to some scheduler"<<endl;
@@ -917,13 +924,11 @@ void EpollUFIOScheduler::waitForEvents(TIME_IN_US timeToWait)
             _uf->yield();
         }
 
-        amtToSleep = (amtToSleep > 1000 ? (int)(amtToSleep/1000) : 1); //let epoll sleep for atleast 1ms
-        if(amtToSleep > ufs->getAmtToSleep())
-            amtToSleep = ufs->getAmtToSleep();
-        nfds = ::epoll_wait(_epollFd, 
-                            _epollEventStruct, 
-                            _maxFds, 
-                            amtToSleep);
+        if(amtToSleep > (ufsAmtToSleep = ufs->getAmtToSleep()))
+            amtToSleep = (int)(ufsAmtToSleep/1000);
+        else
+            amtToSleep = (amtToSleep > 1000 ? (int)(amtToSleep/1000) : 1); //let epoll sleep for atleast 1ms
+        nfds = ::epoll_wait(_epollFd, _epollEventStruct, _maxFds, amtToSleep);
         if(nfds > 0)
         {
             //for each of the fds that had activity activate them
@@ -962,40 +967,46 @@ void EpollUFIOScheduler::waitForEvents(TIME_IN_US timeToWait)
         if(!_sleepList.empty())
         {
             gettimeofday(&now, 0);
-            unsigned long long int timeNow = (now.tv_sec*1000000)+now.tv_usec;
-            for( MapTimeUFIO::iterator beg = _sleepList.begin(); beg != _sleepList.end(); )
+            timeNow = (now.tv_sec*1000000)+now.tv_usec;
+            if(timeNow >= _earliestWakeUpFromSleep) //dont go into this queue unless the time seen the last time has passed
             {
-                //1. see if anyone has crossed the sleep timer - add them to the active list
-                if(beg->first <= timeNow) //sleep time is over
+                ufsToAddToScheduler.clear();
+                for( MapTimeUFIO::iterator beg = _sleepList.begin(); beg != _sleepList.end(); )
                 {
-                    UFSleepInfo* ufsi = beg->second;
-                    if(ufsi)
+                    //1. see if anyone has crossed the sleep timer - add them to the active list
+                    if(beg->first <= timeNow) //sleep time is over
                     {
-                        UFIO* ufio = ufsi->_ufio;
-                        if(ufio &&
-                           ufio->_sleepInfo == ufsi &&  //make sure that the ufio is not listening on another sleep counter right now
-                           ufio->_uf->_status == BLOCKED) //make sure that the uf hasnt been unblocked already
+                        UFSleepInfo* ufsi = beg->second;
+                        if(ufsi)
                         {
-                            ufio->_sleepInfo = 0;
-                            ufio->_errno = ETIMEDOUT;
-                            ufio->_uf->getParentScheduler()->addFiberToScheduler(ufio->_uf, 0);
-                            //this is so that we dont have to wait to handle the conn. being woken up
-                            _interruptedByEventFd = true;
-                       }
+                            UFIO* ufio = ufsi->_ufio;
+                            if(ufio &&
+                                ufio->_sleepInfo == ufsi &&  //make sure that the ufio is not listening on another sleep counter right now
+                                ufio->_uf->_status == BLOCKED) //make sure that the uf hasnt been unblocked already
+                            {
+                                ufio->_sleepInfo = 0;
+                                ufio->_errno = ETIMEDOUT;
+                                ufsToAddToScheduler.push_back(ufio->_uf);
+                                //this is so that we dont have to wait to handle the conn. being woken up
+                                _interruptedByEventFd = true;
+                            }
 
-                       releaseSleepInfo(*ufsi);
+                            releaseSleepInfo(*ufsi);
+                        }
+
+                        _sleepList.erase(beg);
+                        beg = _sleepList.begin();
+                        continue;
                     }
-
-                    _sleepList.erase(beg);
-                    beg = _sleepList.begin();
-                    continue;
+                    else
+                    {
+                        amtToSleep = (amtToSleep > beg->first-timeNow) ? beg->first-timeNow : amtToSleep;
+                        _earliestWakeUpFromSleep = beg->first;
+                        break;
+                    }
+                    ++beg;
                 }
-                else
-                {
-                    amtToSleep = (amtToSleep > beg->first-timeNow) ? beg->first-timeNow : amtToSleep;
-                    break;
-                }
-                ++beg;
+                ufs->addFibersToScheduler(ufsToAddToScheduler, 0);
             }
         }
 
@@ -1025,5 +1036,8 @@ void IORunner::run()
 void UFIO::ufCreateThreadWithIO(pthread_t* tid, list<UF*>* ufsToStartWith)
 {
     ufsToStartWith->push_front(new IORunner());
+
+    // Add connection pool cleaner
+    //ufsToStartWith->push_back(new UFConnectionPoolCleaner); //TODO: figure out how to deal w/ inactive connections
     UFScheduler::ufCreateThread(tid, ufsToStartWith);
 }
