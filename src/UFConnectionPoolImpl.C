@@ -1,6 +1,7 @@
 #include "UFConnectionPool.H"
 #include "UFConnectionPoolImpl.H"
 
+#include <string.h>
 #include "UFIO.H"
 #include <stdlib.h>
 #include <fstream>
