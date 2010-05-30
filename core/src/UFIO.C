@@ -37,13 +37,15 @@ void UFIO::reset()
     _errno = 0; 
     _ufios = 0; 
     _lastEpollFlag = 0;
-    _amtReadLastTimeEqualToAskedAmt = false;
     _sleepInfo = 0;
+    _markedActive = false;
 }
 
 UFIO::~UFIO()
 {
     close();
+    if(_sleepInfo)
+        _sleepInfo->_ufio = 0;
 }
 
 UFIO::UFIO(UF* uf, int fd)
@@ -113,7 +115,7 @@ int UFIO::setupConnectionToAccept(const char* i_a,
         return -1;
     }
 
-    char* interface_addr = ((i_a) && strlen(i_a)) ? const_cast<char*>(i_a) : const_cast<char*>(string("0.0.0.0").c_str());
+    const char* interface_addr = ((i_a) && strlen(i_a)) ? i_a : "0.0.0.0";
 
     int n = 1;
     if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (char *)&n, sizeof(n)) < 0) 
@@ -264,7 +266,7 @@ void UFIO::accept(UFIOAcceptThreadChooser* ufiotChooser,
             connectedArgs->ufio->_remotePort = cli_addr.sin_port;
             uf->_startingArgs = connectedArgs;
 
-            listOfUFsToAdd.push_front(uf);
+            listOfUFsToAdd.push_back(uf);
             listOfUFsToAddSize++;
 
             if(listOfUFsToAddSize == 100)
@@ -302,10 +304,14 @@ void UFIO::accept(UFIOAcceptThreadChooser* ufiotChooser,
     }
 }
 
-UFIOScheduler* UFIO::getUFIOS()
+UFIOScheduler* UFIOScheduler::getUFIOS(pthread_t tid)
 {
     UFIOScheduler* tmpUfios = 0;
-    //
+
+    if(!tid || tid == pthread_self())
+        return (UFIOScheduler*)pthread_getspecific(_keyToIdentifySchedulerOnThread);
+
+
     //find the ufios for this thread - this map operation should only be done once
     ThreadFiberIOSchedulerMap::iterator index = UFIOScheduler::_tfiosscheduler.find(pthread_self());
     if(index != UFIOScheduler::_tfiosscheduler.end())
@@ -321,41 +327,27 @@ UFIOScheduler* UFIO::getUFIOS()
 
 ssize_t UFIO::read(void *buf, size_t nbyte, TIME_IN_US timeout)
 {
-    UFIOScheduler* tmpUfios = _ufios ? _ufios : getUFIOS();
+    UFIOScheduler* tmpUfios = _ufios ? _ufios : UFIOScheduler::getUFIOS();
 
-    //we read everything there was to be read the last time, so this time wait to read
-    if(!_amtReadLastTimeEqualToAskedAmt) 
-    {
-        //wait for something to read first
-        if(!tmpUfios->setupForRead(this, timeout))
-        {
-            _errno = errno;
-            return -1;
-        }
-        if(_errno == ETIMEDOUT) //setupForRead will return w/ success however it will set the errno to ETIMEDOUT if a timeout occurred
-            return -1;
-    }
-
-    _amtReadLastTimeEqualToAskedAmt = false;
     ssize_t n = 0;;
     while(1)
     {
         n = ::read(_fd, buf, nbyte);
         if(n > 0)
-        {
-            _amtReadLastTimeEqualToAskedAmt = ((unsigned int) n != nbyte) ? false : true;
             return n;
-        }
         else if(n < 0)
         {
             if((errno == EAGAIN) || (errno == EWOULDBLOCK))
             {
                 _errno = 0;
-                if(!tmpUfios->setupForRead(this, timeout))
+                _markedActive = false;
+                while(!_markedActive) 
                 {
-                    _errno = errno;
-                    return -1;
+                    //wait for something to read first
+                    if(!tmpUfios->setupForRead(this, timeout))
+                        return -1;
                 }
+                continue;
             }
             else if(errno == EINTR)
                 continue;
@@ -373,7 +365,7 @@ ssize_t UFIO::read(void *buf, size_t nbyte, TIME_IN_US timeout)
 
 ssize_t UFIO::write(const void *buf, size_t nbyte, TIME_IN_US timeout)
 {
-    UFIOScheduler* tmpUfios = _ufios ? _ufios : getUFIOS();
+    UFIOScheduler* tmpUfios = _ufios ? _ufios : UFIOScheduler::getUFIOS();
 
     ssize_t n = 0;;
     unsigned int amtWritten = 0;
@@ -393,17 +385,21 @@ ssize_t UFIO::write(const void *buf, size_t nbyte, TIME_IN_US timeout)
             _errno = errno;
             if((errno == EAGAIN) || (errno == EWOULDBLOCK))
             {
+                _markedActive = false;
                 _errno = 0;
-                if(!tmpUfios->setupForWrite(this, timeout))
+                while(!_markedActive)
                 {
-                    _errno = errno;
-                    return -1;
+                    if(!tmpUfios->setupForWrite(this, timeout))
+                        return -1;
                 }
             }
             else if(errno == EINTR)
                 continue;
             else
+            {
+                _errno = errno;
                 break;
+            }
         }
         else if(n == 0)
             break;
@@ -420,7 +416,7 @@ int UFIO::connect(const struct sockaddr *addr,
 
 
     //find the scheduler for this request
-    UFIOScheduler* tmpUfios = _ufios ? _ufios : getUFIOS();
+    UFIOScheduler* tmpUfios = _ufios ? _ufios : UFIOScheduler::getUFIOS();
 
     while(::connect(_fd, addr, addrlen) < 0)
     {
@@ -444,7 +440,7 @@ int UFIO::connect(const struct sockaddr *addr,
 
 int UFIO::sendto(const char *buf, int len, const struct sockaddr *to, int tolen, TIME_IN_US timeout)
 {
-    UFIOScheduler* tmpUfios = _ufios ? _ufios : getUFIOS();
+    UFIOScheduler* tmpUfios = _ufios ? _ufios : UFIOScheduler::getUFIOS();
 
     ssize_t n = 0;;
     unsigned int amtWritten = 0;
@@ -464,17 +460,21 @@ int UFIO::sendto(const char *buf, int len, const struct sockaddr *to, int tolen,
             _errno = errno;
             if((errno == EAGAIN) || (errno == EWOULDBLOCK))
             {
+                _markedActive = false;
                 _errno = 0;
-                if(!tmpUfios->setupForWrite(this, timeout))
+                while(!_markedActive)
                 {
-                    _errno = errno;
-                    return -1;
+                    if(!tmpUfios->setupForWrite(this, timeout))
+                        return -1;
                 }
             }
             else if(errno == EINTR)
                 continue;
             else
+            {
+                _errno = errno;
                 break;
+            }
         }
         else if(n == 0)
             break;
@@ -486,7 +486,7 @@ int UFIO::sendmsg(const struct msghdr *msg,
                   int flags,
 	              TIME_IN_US timeout)
 {
-    UFIOScheduler* tmpUfios = _ufios ? _ufios : getUFIOS();
+    UFIOScheduler* tmpUfios = _ufios ? _ufios : UFIOScheduler::getUFIOS();
 
     ssize_t n = 0;;
     while(1)
@@ -499,17 +499,21 @@ int UFIO::sendmsg(const struct msghdr *msg,
             _errno = errno;
             if((errno == EAGAIN) || (errno == EWOULDBLOCK))
             {
+                _markedActive = false;
                 _errno = 0;
-                if(!tmpUfios->setupForWrite(this, timeout))
+                while(!_markedActive)
                 {
-                    _errno = errno;
-                    return -1;
+                    if(!tmpUfios->setupForWrite(this, timeout))
+                        return -1;
                 }
             }
             else if(errno == EINTR)
                 continue;
             else
+            {
+                _errno = errno;
                 break;
+            }
         }
         else if(n == 0)
             break;
@@ -523,41 +527,26 @@ int UFIO::recvfrom(char *buf,
 		           int *fromlen, 
                    TIME_IN_US timeout)
 {
-    UFIOScheduler* tmpUfios = _ufios ? _ufios : getUFIOS();
+    UFIOScheduler* tmpUfios = _ufios ? _ufios : UFIOScheduler::getUFIOS();
 
-    //we read everything there was to be read the last time, so this time wait to read
-    if(!_amtReadLastTimeEqualToAskedAmt) 
-    {
-        //wait for something to read first
-        if(!tmpUfios->setupForRead(this, timeout))
-        {
-            _errno = errno;
-            return -1;
-        }
-        if(_errno == ETIMEDOUT) //setupForRead will return w/ success however it will set the errno to ETIMEDOUT if a timeout occurred
-            return -1;
-    }
-
-    _amtReadLastTimeEqualToAskedAmt = false;
     ssize_t n = 0;;
     while(1)
     {
         n = ::recvfrom(_fd, buf, len, 0, from, (socklen_t *)fromlen);
         if(n > 0)
-        {
-            _amtReadLastTimeEqualToAskedAmt = (n != len) ? false : true;
             return n;
-        }
         else if(n < 0)
         {
             if((errno == EAGAIN) || (errno == EWOULDBLOCK))
             {
                 _errno = 0;
-                if(!tmpUfios->setupForRead(this, timeout))
+                _markedActive = false;
+                while(!_markedActive)
                 {
-                    _errno = errno;
-                    return -1;
+                    if(!tmpUfios->setupForRead(this, timeout))
+                        return -1;
                 }
+                continue;
             }
             else if(errno == EINTR)
                 continue;
@@ -577,7 +566,7 @@ int UFIO::recvmsg(struct msghdr *msg,
                   int flags,
 	              TIME_IN_US timeout)
 {
-    UFIOScheduler* tmpUfios = _ufios ? _ufios : getUFIOS();
+    UFIOScheduler* tmpUfios = _ufios ? _ufios : UFIOScheduler::getUFIOS();
 
     ssize_t n = 0;
     while(1)
@@ -590,11 +579,13 @@ int UFIO::recvmsg(struct msghdr *msg,
             if((errno == EAGAIN) || (errno == EWOULDBLOCK))
             {
                 _errno = 0;
-                if(!tmpUfios->setupForRead(this, timeout))
+                _markedActive = false;
+                while(!_markedActive)
                 {
-                    _errno = errno;
-                    return -1;
+                    if(!tmpUfios->setupForRead(this, timeout))
+                        return -1;
                 }
+                continue;
             }
             else if(errno == EINTR)
                 continue;
@@ -611,6 +602,16 @@ int UFIO::recvmsg(struct msghdr *msg,
 }
 
 
+static pthread_key_t getThreadKey()
+{
+    if(pthread_key_create(&UFIOScheduler::_keyToIdentifySchedulerOnThread, 0) != 0)
+    {
+        cerr<<"couldnt create ufios thread specific key "<<strerror(errno)<<endl;
+        exit(1);
+    }
+    return UFIOScheduler::_keyToIdentifySchedulerOnThread;
+}
+pthread_key_t UFIOScheduler::_keyToIdentifySchedulerOnThread = getThreadKey();
 
 ThreadFiberIOSchedulerMap UFIOScheduler::_tfiosscheduler;
 EpollUFIOScheduler::EpollUFIOScheduler(UF* uf, unsigned int maxFds)
@@ -621,6 +622,15 @@ EpollUFIOScheduler::EpollUFIOScheduler(UF* uf, unsigned int maxFds)
     _epollEventStruct = 0;
     _alreadySetup = false;
     _earliestWakeUpFromSleep = 0;
+}
+
+UFIOScheduler::UFIOScheduler()
+{ 
+    _connPool = new UFConnectionPool;
+}
+UFIOScheduler::~UFIOScheduler()
+{ 
+    delete _connPool; 
 }
 
 EpollUFIOScheduler::~EpollUFIOScheduler()
@@ -662,15 +672,19 @@ bool EpollUFIOScheduler::isSetup()
         _epollFd = -1;
     }
 
+    pthread_setspecific(_keyToIdentifySchedulerOnThread, this);
     return (_alreadySetup = true);
 }
 
-bool EpollUFIOScheduler::addToScheduler(UFIO* ufio, void* inputInfo, TIME_IN_US to)
+bool EpollUFIOScheduler::addToScheduler(UFIO* ufio, void* inputInfo, TIME_IN_US to, bool wait, bool runEpollCtl)
 {
     if(!ufio || !inputInfo || !isSetup())
+    {
+        ufio->_errno = EINVAL;
         return false;
+    }
 
-    if(ufio->_lastEpollFlag != *((int*)inputInfo)) //dont do anything if the flags are same as last time
+    if(runEpollCtl || ufio->_lastEpollFlag != *((int*)inputInfo)) //dont do anything if the flags are same as last time
     {
         struct epoll_event ev;
         ev.data.fd = ufio->getFd();
@@ -689,6 +703,7 @@ bool EpollUFIOScheduler::addToScheduler(UFIO* ufio, void* inputInfo, TIME_IN_US 
         {
             cerr<<"couldnt add/modify fd to epoll queue "<<strerror(errno)<<" trying to add "<<ufio->getFd()<<" to "<<_epollFd<<endl;
             exit(1);
+            ufio->_errno = EINVAL;
             return false;
         }
         ufio->_lastEpollFlag = ev.events;
@@ -704,6 +719,8 @@ bool EpollUFIOScheduler::addToScheduler(UFIO* ufio, void* inputInfo, TIME_IN_US 
         {
             cerr<<"couldnt create sleep info"<<endl;
             exit(1);
+            ufio->_errno = EINVAL;
+            return false;
         }
         ufsi->_ufio = ufio;
         ufio->_sleepInfo = ufsi;
@@ -714,14 +731,24 @@ bool EpollUFIOScheduler::addToScheduler(UFIO* ufio, void* inputInfo, TIME_IN_US 
         _sleepList.insert(std::make_pair(timeToWakeUp, ufsi));
     }
 
+    ufio->_errno = 0;
+    ufio->setUF(_ufs->getRunningFiberOnThisThread());
+    ufio->_markedActive = false;
+    if(!wait)
+        return true;
     ufio->getUF()->block(); //switch context till someone wakes me up
+
+    if(!to) //nothing to do w/ no timeout
+        return true;
+
     if(ufio->_sleepInfo)
     {
-        ufio->_sleepInfo->_ufio = 0; //set the sleep indicator to not have a dependency w/ this ufio
-        ufio->_sleepInfo = 0; //remove the sleep indicator
+        ufio->_sleepInfo->_ufio = 0;
+        ufio->_sleepInfo = 0;
+        return true;
     }
-
-    return true;
+    //ufio->_errno = ETIMEDOUT
+    return false;
 }
 
 bool EpollUFIOScheduler::setupForConnect(UFIO* ufio, TIME_IN_US to)
@@ -759,13 +786,31 @@ bool EpollUFIOScheduler::closeConnection(UFIO* ufio)
         _intUFIOMap.erase(index);
 
     return true;
-
     /*
     struct epoll_event ev;
     ev.data.fd = ufio->getFd();
     ev.events = 0;
     return (epoll_ctl(_epollFd, EPOLL_CTL_DEL, ufio->getFd(), &ev) == 0) ? true : false;
     */
+}
+
+bool EpollUFIOScheduler::rpoll(list<UFIO*>& ufioList, TIME_IN_US to)
+{
+    int flags = EPOLLIN|EPOLLET|EPOLLPRI|EPOLLERR|EPOLLHUP;
+    for(list<UFIO*>::iterator beg = ufioList.begin();
+        beg != ufioList.end();
+        ++beg) 
+        addToScheduler(*beg, (void*)&flags, 0, false, true);
+
+    _ufs->getRunningFiberOnThisThread()->block();
+    /*
+    if(!to)
+        _ufs->getRunningFiberOnThisThread()->block();
+    else
+        _ufs->getRunningFiberOnThisThread()->usleep(to);
+        */
+
+    return true;
 }
 
 
@@ -853,8 +898,8 @@ static void* notifyEpollFunc(void* args)
 
 void EpollUFIOScheduler::waitForEvents(TIME_IN_US timeToWait)
 {
-    UFScheduler* myScheduler = UFScheduler::getUFScheduler();
-    if(!myScheduler)
+    _ufs = UFScheduler::getUFScheduler();
+    if(!_ufs)
     {
         cerr<<"have to be able to find my scheduler"<<endl;
         return;
@@ -872,18 +917,18 @@ void EpollUFIOScheduler::waitForEvents(TIME_IN_US timeToWait)
     }
     makeSocketNonBlocking(pfd[0]);
     //makeSocketNonBlocking(pfd[1]); - dont make the write socket non-blocking
-    myScheduler->_notifyArgs = (void*)(&pfd[1]);
+    _ufs->_notifyArgs = (void*)(&pfd[1]);
     ens->_efd = pfd[0];
 #else
     int efd = eventfd(0, EFD_NONBLOCK|EFD_CLOEXEC); //TODO: check the error code of the eventfd creation
-    myScheduler->_notifyArgs = (void*)&efd;
+    _ufs->_notifyArgs = (void*)&efd;
     ens->_efd = efd;
 #endif
-    myScheduler->_notifyFunc = notifyEpollFunc;
+    _ufs->_notifyFunc = notifyEpollFunc;
     //add the UF to handle the efds calls
     UF* eventFdFiber = new ReadNotificationUF();
     eventFdFiber->_startingArgs = ens;
-    myScheduler->addFiberToScheduler(eventFdFiber, 0);
+    _ufs->addFiberToScheduler(eventFdFiber, 0);
 
 
 
@@ -906,7 +951,6 @@ void EpollUFIOScheduler::waitForEvents(TIME_IN_US timeToWait)
     UFIO* ufio = 0;
     UF* uf = 0;
     unsigned long long int amtToSleep = timeToWait;
-    unsigned long long int ufsAmtToSleep = 0;
     int i = 0;
     _interruptedByEventFd = false;
     UFScheduler* ufs = _uf->getParentScheduler();
@@ -916,6 +960,7 @@ void EpollUFIOScheduler::waitForEvents(TIME_IN_US timeToWait)
         cerr<<"epoll scheduler has to be connected to some scheduler"<<endl;
         return;
     }
+    unsigned long long int amtToSleepFromUFS = 0;
     while(1)
     {
         if(_interruptedByEventFd) //this is so that the last interruption gets handled right away
@@ -924,10 +969,15 @@ void EpollUFIOScheduler::waitForEvents(TIME_IN_US timeToWait)
             _uf->yield();
         }
 
-        if(amtToSleep > (ufsAmtToSleep = ufs->getAmtToSleep()))
-            amtToSleep = (int)(ufsAmtToSleep/1000);
+        if(ufs->getActiveRunningListSize() < 2) //means that epoll is the only fiber thats currently active
+        {
+            if(amtToSleep > (amtToSleepFromUFS = ufs->getAmtToSleep()))
+                amtToSleep = (int)(amtToSleepFromUFS/1000);
+            else
+                amtToSleep = (amtToSleep > 1000 ? (int)(amtToSleep/1000) : 1); //let epoll sleep for atleast 1ms
+        }
         else
-            amtToSleep = (amtToSleep > 1000 ? (int)(amtToSleep/1000) : 1); //let epoll sleep for atleast 1ms
+            amtToSleep = 0; //dont wait on epoll - since there are other ufs waiting to run
         nfds = ::epoll_wait(_epollFd, _epollEventStruct, _maxFds, amtToSleep);
         if(nfds > 0)
         {
@@ -943,6 +993,7 @@ void EpollUFIOScheduler::waitForEvents(TIME_IN_US timeToWait)
                         cerr<<"invalid user fiber io found for fd, "<<_epollEventStruct[i].data.fd<<endl;
                         exit(1);
                     }
+                    ufio->_markedActive = true;
                     //activate the fiber
                     ufs->addFiberToScheduler(uf, 0);
                 }
@@ -1014,8 +1065,8 @@ void EpollUFIOScheduler::waitForEvents(TIME_IN_US timeToWait)
         _uf->yield();
     }
 
-    myScheduler->_notifyArgs = 0;
-    myScheduler->_notifyFunc = 0;
+    _ufs->_notifyArgs = 0;
+    _ufs->_notifyFunc = 0;
 }
 
 int IORunner::_myLoc = -1;

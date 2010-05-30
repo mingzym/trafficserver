@@ -13,6 +13,13 @@
 #include <sstream>
 #include "UF.H"
 
+struct Stat
+{
+    Stat(std::string _name, long long _value);
+    std::string name;
+    long long value;
+};
+
 class UFIO;
 class UFServer;
 class UFStatSystem
@@ -45,7 +52,7 @@ private:
     static bool getStatNum(const char *stat_name, uint32_t &stat_num);
     static UFServer *server;
     static std::map<std::string, uint32_t> stat_name_to_num;
-    static std::vector< std::pair<std::string, long long> > global_stats;
+    static std::vector< Stat > global_stats;
     static uint32_t MAX_STATS_ALLOWED;
     static uint32_t NUM_STATS_ESTIMATE;
 

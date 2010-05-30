@@ -12,6 +12,7 @@
 #include <list>
 #include <ucontext.h>
 #include <pthread.h>
+#include <errno.h>
 
 using namespace std;
 namespace std { using namespace __gnu_cxx; }
@@ -28,6 +29,7 @@ enum UFStatus
 //create the type of UF you'd like to pass into the accept handler
 typedef unsigned long long int UFId;
 struct UFScheduler;
+struct UFMutex;
 struct UF
 {
     friend class UFScheduler;
@@ -52,6 +54,7 @@ struct UF
     static void          gusleep(unsigned long long int sleepAmtInUs);
     ///simply block the fiber
     void                 block();
+    UFStatus             getStatus() const;
 
 
     UFStatus             _status;
@@ -67,6 +70,7 @@ protected:
 private:
     void waitOnLock();
 };
+inline UFStatus UF::getStatus() const { return _status; }
 
 struct UFFactory
 {
@@ -82,25 +86,20 @@ protected:
     size_t              _capacity;
     size_t              _size;
 };
-inline UFFactory* UFFactory::getInstance()
-{
-    return (_instance ? _instance : (_instance = new UFFactory()));
-}
-inline UF* UFFactory::selectUF(unsigned int location)
-{
-    return _objMapping[location];
-}
+inline UFFactory* UFFactory::getInstance() { return (_instance ? _instance : (_instance = new UFFactory())); }
+inline UF* UFFactory::selectUF(unsigned int location) { return _objMapping[location]; }
 
-
-
+struct UFWaitInfo;
+typedef std::list<UFWaitInfo*> UFWaitList;
+typedef map<UF*, UFWaitInfo*> UFWLHash;
 typedef std::list<UF*>          UFList;
 struct UFMutex
 {
     UFMutex() 
     {
         _lockCurrentlyOwned = false;
-        _pendingLockNotification = 0;
         _lockActive = 0;
+        _mustRunUF = 0;
     }
 
     bool lock(UF* uf);
@@ -116,26 +115,38 @@ struct UFMutex
     //THE CALLER MUST get the lock before calling this fxn
     //THE CALLER MUST unlock the lock after calling this fxn (to maintain parity w/ pthread calling paradigms
     void signal();
+    //THE CALLER MUST get the lock before calling this fxn
+    //THE CALLER MUST unlock the lock after calling this fxn (to maintain parity w/ pthread calling paradigms
+    int condTimedWait(UF *uf, unsigned long long int sleepAmtInUs);
 
+    void releaseSpinLock(bool spinCPU = false);
+    void getSpinLock(bool spinCPU = false);
 
 protected:
-    int             _lockActive;
-    UFList          _listOfClientsWaitingOnLock;
-    UFList          _listOfClientsWaitingOnCond;
-    bool            _lockCurrentlyOwned;
-    UF*             _pendingLockNotification;
-
-    void releaseLocalLock();
-    void getLocalLock();
+    int                 _lockActive;
+    UFList              _listOfClientsWaitingOnLock;
+    //UFWaitList          _listOfClientsWaitingOnCond;
+    UFWLHash            _listOfClientsWaitingOnCond;
+    bool                _lockCurrentlyOwned;
+    UF*                 _mustRunUF;
 };
+struct UFWaitInfo
+{
+    UFWaitInfo() { reset(); }
+    void reset();
+    UF*                 _uf;
+    bool                _sleeping;
+    bool                _waiting;
+    UFMutex             _ctrl;
+};
+inline void UFWaitInfo::reset() { _uf = 0; _sleeping = false; _waiting = false; }
 
 
-//per thread scheduler
-typedef std::multimap<unsigned long long int, UF*> MapTimeUF;
+typedef std::multimap<unsigned long long int, UFWaitInfo*> MapTimeUF;
 //typedef std::map<pthread_t,UFScheduler*> ThreadUFSchedulerMap;
+//per thread scheduler
 typedef hash_map<pthread_t, UFScheduler*, hash<uintptr_t> > ThreadUFSchedulerMap;
 
-struct UFConnectionPool;
 struct UFScheduler
 {
     friend class UF;
@@ -173,7 +184,14 @@ struct UFScheduler
     void* getSpecific() const;
     unsigned long long int getAmtToSleep() const;
     static void setExit(bool exit = true);
+    bool shouldExit() const;
     void setExitJustMe(bool exit = true);
+    size_t getActiveRunningListSize() const;
+
+    //stats for thread
+    std::vector<long long> _stats;
+    UFMutex _stats_lock;
+
 
     ///the variable that says whether the scheduler should be handling the sleep or
     //if its handled w/in the UserFabrics
@@ -194,12 +212,13 @@ protected:
     //no lock for active running list - cause only the running
     //thread can add to it
     UFList                      _activeRunningList;
+    size_t                      _activeRunningListSize;
 
     //nominate to add to a thread's running list
     UFList                      _nominateToAddToActiveRunningList;
     pthread_mutex_t             _mutexToNominateToActiveList;
     pthread_cond_t              _condToNominateToActiveList;
-
+    
     //the sleep tree
     MapTimeUF                   _sleepList;
     unsigned long long int      _earliestWakeUpFromSleep;
@@ -212,16 +231,17 @@ protected:
     pthread_t                   _tid;
 
     void notifyUF();
+    
+    list<UFWaitInfo*>  _availableWaitInfo;
+    UFWaitInfo* getWaitInfo();
+    void releaseWaitInfo(UFWaitInfo& ufsi);
 
 public:
-    //stats for thread
-    std::vector<long long> _stats;
-    UFMutex _stats_lock;
-
-    // connection pool
-    UFConnectionPool *_conn_pool;
+    UFMutex testingCondTimedWait;
 };
 
+inline size_t UFScheduler::getActiveRunningListSize() const { return _activeRunningListSize; }
+inline bool UFScheduler::shouldExit() const { return (_exitJustMe || _exit) ? true : false; }
 inline unsigned long long int UFScheduler::getAmtToSleep() const { return _amtToSleep; }
 inline UF* UFScheduler::getRunningFiberOnThisThread(){ return _currentFiber; }
 inline const ucontext_t& UFScheduler::getMainContext() const { return _mainContext; };
@@ -230,6 +250,24 @@ inline void* UFScheduler::getSpecific() const { return _specific; }
 inline void UFScheduler::setExit(bool exit) { _exit = exit; }
 inline void UFScheduler::setExitJustMe(bool exit) { _exitJustMe = exit; }
 
+inline UFWaitInfo* UFScheduler::getWaitInfo()
+{
+    if(!_availableWaitInfo.empty())
+    {
+        UFWaitInfo* ufwi = _availableWaitInfo.front();
+        _availableWaitInfo.pop_front();
+        ufwi->reset();
+        return ufwi;
+    }
+
+    return new UFWaitInfo();
+}
+
+inline void UFScheduler::releaseWaitInfo(UFWaitInfo& ufwi)
+{
+    _availableWaitInfo.push_back(&ufwi);
+}
+
 inline UFScheduler* UF::getParentScheduler() const { return _parentScheduler; }
 
 inline void UF::waitOnLock() { block(); }
@@ -237,6 +275,11 @@ inline void UF::waitOnLock() { block(); }
 inline void UF::gusleep(unsigned long long int sleepAmtInUs)
 {
     UFScheduler::getUFScheduler()->getRunningFiberOnThisThread()->usleep(sleepAmtInUs);
+}
+
+inline unsigned long long int timeInUS(timeval& t)
+{
+    return ((unsigned long long int)(((unsigned long long int) t.tv_sec)*1000000)+(unsigned long long int) t.tv_usec);
 }
 
 inline void UF::usleep(unsigned long long int sleepAmtInUs)
@@ -249,12 +292,17 @@ inline void UF::usleep(unsigned long long int sleepAmtInUs)
 
     struct timeval now;
     gettimeofday(&now, 0);
-    unsigned long long int timeToWakeUp = now.tv_sec*1000000+now.tv_usec + sleepAmtInUs;
+    
+    unsigned long long int timeToWakeUp = timeInUS(now) + sleepAmtInUs;
     if( _parentScheduler->_earliestWakeUpFromSleep > timeToWakeUp ||
        !_parentScheduler->_earliestWakeUpFromSleep)
         _parentScheduler->_earliestWakeUpFromSleep = timeToWakeUp;
 
-    _parentScheduler->_sleepList.insert(std::make_pair(timeToWakeUp, this));
+    UFWaitInfo *ufwi = _parentScheduler->getWaitInfo();
+    ufwi->_uf = this;
+    ufwi->_sleeping = true;
+
+    _parentScheduler->_sleepList.insert(std::make_pair(timeToWakeUp, ufwi));
     block();
 }
 
@@ -270,179 +318,14 @@ inline void UF::yield()
     swapcontext(&_UFContext, &(_parentScheduler->getMainContext()));
 }
 
-inline void UFMutex::releaseLocalLock()
+inline void UFMutex::releaseSpinLock(bool spinCPU)
 {
-    while(!__sync_bool_compare_and_swap(&_lockActive, 1, 0)) { sched_yield(); }
-    //while(!__sync_bool_compare_and_swap(&_lockActive, 1, 0)) { }
+    while(!__sync_bool_compare_and_swap(&_lockActive, 1, 0)) { if(!spinCPU) sched_yield(); }
 }
 
-inline void UFMutex::getLocalLock()
+inline void UFMutex::getSpinLock(bool spinCPU)
 {
-    while(!__sync_bool_compare_and_swap(&_lockActive, 0, 1)) { sched_yield(); }
-    //while(!__sync_bool_compare_and_swap(&_lockActive, 0, 1)) { }
+    while(!__sync_bool_compare_and_swap(&_lockActive, 0, 1)) { if(!spinCPU) sched_yield(); }
 }
-
-inline bool UFMutex::lock(UF* uf)
-{
-    if(!uf || !uf->_parentScheduler)
-        return false;
-
-    getLocalLock();
-    if(_listOfClientsWaitingOnLock.empty()) //probably the most common case (no UF has the lock)
-    {
-        _listOfClientsWaitingOnLock.push_back(uf);
-        _lockCurrentlyOwned = true;
-        releaseLocalLock();
-        return true;
-    }
-
-    //see if any UF is holding the lock right now - if not get the lock
-    //this is the case where between the time that an UF is woken up
-    //(after another UF releases the lock)
-    //and it actually runs this requesting UF might be able to procure the lock
-    if(!_lockCurrentlyOwned)
-    {
-        _listOfClientsWaitingOnLock.push_front(uf);
-        _lockCurrentlyOwned = true;
-        releaseLocalLock();
-        return true;
-    }
-
-    //for the rest of the UFs that didnt meet the above criteria 
-    //and didnt get the lock they have to wait
-    _listOfClientsWaitingOnLock.push_back(uf);
-    releaseLocalLock();
-
-    while(1) //try to get the lock
-    {
-        //simply yield - since the uf will be woken up once it gets the lock
-        uf->waitOnLock();
-
-        //since this uf got woken up - check if it can get the lock now
-        getLocalLock();
-
-        if(_pendingLockNotification != uf) //there can only be one pending notification out at any time - since this lock was woken up - this must have gotten the pending notification
-        {
-            releaseLocalLock();
-            continue;
-        }
-        _pendingLockNotification = 0; 
-
-        //check if any other UF has gotten the lock between the time that this UF 
-        //got the notification and actually acted on it
-        if(!_lockCurrentlyOwned && (_listOfClientsWaitingOnLock.front() == uf))
-        {
-            _lockCurrentlyOwned = true;
-            releaseLocalLock();
-            return true;
-        }
-
-        releaseLocalLock();
-    }
-
-    return true;
-}
-
-inline bool UFMutex::unlock(UF* uf)
-{
-    if(!uf)
-        return false;
-
-    UFList::iterator beg;
-    getLocalLock();
-
-    beg = _listOfClientsWaitingOnLock.begin();
-    if(uf == *beg) //check if this uf is the current owner of this lock
-    {
-        _lockCurrentlyOwned = false;
-        beg = _listOfClientsWaitingOnLock.erase(beg);
-
-        //notify the next UF in line
-        if(!_listOfClientsWaitingOnLock.empty() && !_pendingLockNotification)
-        {
-            _pendingLockNotification = (*beg);
-            releaseLocalLock();
-            (*beg)->_parentScheduler->addFiberToScheduler((*beg), (*beg)->_parentScheduler->_tid);
-        }
-        else
-            releaseLocalLock();
-
-        return true;
-    }
-
-    releaseLocalLock();
-    return false;
-}
-
-inline bool UFMutex::tryLock(UF* uf, unsigned long long int autoRetryIntervalInUS)
-{
-    while(1)
-    {
-        getLocalLock();
-        if(_listOfClientsWaitingOnLock.empty())
-        {
-            _listOfClientsWaitingOnLock.push_back(uf);
-            _lockCurrentlyOwned = true;
-            releaseLocalLock();
-            return true;
-        }
-
-        releaseLocalLock();
-
-        if(!autoRetryIntervalInUS)
-            break;
-
-        usleep(autoRetryIntervalInUS);
-    }
-
-    return false;
-}
-
-
-
-inline bool UFMutex::condWait(UF* uf)
-{
-    if(!uf)
-        return false;
-    _listOfClientsWaitingOnCond.push_back(uf) ;
-    unlock(uf);
-    uf->waitOnLock(); //this fxn will cause the fxn to wait till a signal or broadcast has occurred
-    lock(uf);
-
-    return true;
-}
-
-inline void UFMutex::broadcast()
-{
-    if(_listOfClientsWaitingOnCond.empty())
-        return;
-
-    //notify all the waiters to wake up
-    UFList::iterator beg = _listOfClientsWaitingOnCond.begin();
-    for(; beg != _listOfClientsWaitingOnCond.end(); )
-    {
-        (*beg)->_parentScheduler->addFiberToScheduler(*beg, (*beg)->_parentScheduler->_tid);
-        beg = _listOfClientsWaitingOnCond.erase(beg);
-    }
-}
-
-inline void UFMutex::signal()
-{
-    if(_listOfClientsWaitingOnCond.empty())
-        return;
-
-    UFList::iterator beg = _listOfClientsWaitingOnCond.begin();
-    (*beg)->_parentScheduler->addFiberToScheduler(*beg, (*beg)->_parentScheduler->_tid);
-    _listOfClientsWaitingOnCond.erase(beg);
-}
-
-//TODO: later
-/*
-inline bool UFMutex::condTimedWait(UF* uf)
-{
-    if(!uf)
-        return false;
-}
-*/
 
 #endif

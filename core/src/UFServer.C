@@ -140,7 +140,6 @@ void UFServer::startThreads()
         addThread("ACCEPT", 0, thread[i]);
     }
 
-    cerr<<"starting server"<<endl;
 
 
     //wait for the threads to finish

@@ -1,7 +1,6 @@
 #include "UFConnectionPool.H"
 #include "UFConnectionPoolImpl.H"
 
-#include <string.h>
 #include "UFIO.H"
 #include <stdlib.h>
 #include <fstream>
@@ -10,11 +9,13 @@
 #include <stdio.h>
 #include <errno.h>
 
+#include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <string.h>
 
 const unsigned short int PERCENT_LOGGING_SAMPLING = 5;
 
@@ -183,10 +184,7 @@ UFConnectionGroupInfo* UFConnectionPoolImpl::removeGroup(const std::string& name
 {
     GroupIPMap::iterator foundItr = _groupIpMap.find(name);
     if(foundItr == _groupIpMap.end())
-    {
-        cerr<<getpid()<<" "<<time(NULL)<<" "<<__LINE__<<" "<<"didnt find group with name "<<name <<" to remove"<<endl;
         return NULL;
-    }
 
     UFConnectionGroupInfo* removedObj = (*foundItr).second;
     _groupIpMap.erase(foundItr);
@@ -231,7 +229,6 @@ UFIO* UFConnectionPoolImpl::getConnection(const std::string& groupName, bool wai
     UFConnectionGroupInfo* groupInfo = NULL;
     if((foundItr == _groupIpMap.end()) || !((*foundItr).second))
     {
-        cerr<<getpid()<<" "<<time(NULL)<<" "<<__LINE__<<" "<<"null group or didnt find group with name "<<groupName<<endl;
         groupInfo = addGroupImplicit(groupName);
         if(!groupInfo) 
             return NULL;
@@ -316,7 +313,8 @@ UFIO* UFConnectionPoolImpl::getConnection(const std::string& groupName, bool wai
             }
             else {
                 // if _maxSimultaneousConns is hit, wait for a connection to become available
-                if(ipInfo->_currentlyUsedConnections.size() + ipInfo->_inProcessCount >= (unsigned int) ipInfo->_maxSimultaneousConns) {
+                if(ipInfo->_maxSimultaneousConns && 
+                   (ipInfo->_currentlyUsedConnections.size() + ipInfo->_inProcessCount >= (unsigned int) ipInfo->_maxSimultaneousConns)) {
                     // wait for a connection to be released
                     ipInfo->_someConnectionAvailable.lock(this_user_fiber);
                     ipInfo->_someConnectionAvailable.condWait(this_user_fiber);
@@ -402,7 +400,6 @@ void UFConnectionPoolImpl::clearBadConnections()
 
 void UFConnectionPoolImpl::releaseConnection(UFIO* ufIO, bool connOk)
 {
-    cerr << "UFConnectionPoolImpl::releaseConnection" << endl;
     if(!ufIO)
         return;
 
@@ -539,10 +536,7 @@ double UFConnectionPoolImpl::getGroupAvailability(const std::string& name) const
 
     GroupIPMap::const_iterator foundItr = _groupIpMap.find(name);
     if((foundItr == _groupIpMap.end()) || !((*foundItr).second))
-    {
-        cerr<<getpid()<<" "<<time(NULL)<<" "<<__LINE__<<" "<<"null group or didnt find group with name "<<((*foundItr).second ? (*foundItr).second->_name : "")<<endl;
         return result;
-    }
 
     return (*foundItr).second->getAvailability();
 }
@@ -556,16 +550,21 @@ UFConnectionPoolImpl::~UFConnectionPoolImpl()
 
 void UFConnectionPoolCleaner::run()
 {
-    UFScheduler *this_thread_scheduler = UFScheduler::getUFScheduler();
-    UF* this_uf = this_thread_scheduler->getRunningFiberOnThisThread();
+    UF* this_uf = UFScheduler::getUFScheduler()->getRunningFiberOnThisThread();
+    UFIOScheduler* ufios = UFIOScheduler::getUFIOS();
+    UFConnectionPool* ufcp = ufios->getConnPool();
+
+    if(!ufcp)
+    {
+        cerr<<"couldnt get conn pool on thread "<<pthread_self()<<endl;
+        exit(1);
+    }
+
     while(1)
     {
         this_uf->usleep(300*1000*1000);
-        if(!this_thread_scheduler->_conn_pool)
-            break;
-        this_thread_scheduler->_conn_pool->clearBadConnections();
+        ufcp->clearBadConnections();
     }
-    this_thread_scheduler->setExit();
 }
 
 UFConnectionPoolImpl::UFConnectionPoolImpl()
@@ -583,7 +582,7 @@ void UFConnectionPoolImpl::init()
     }
 }
 
-int UFConnectionPool::MAX_SIMUL_CONNS_PER_HOST = 5;
+int UFConnectionPool::MAX_SIMUL_CONNS_PER_HOST = 0;
 int UFConnectionPool::TIMEOUT_PER_REQUEST = 10;
 
 UFConnectionPool::UFConnectionPool() 

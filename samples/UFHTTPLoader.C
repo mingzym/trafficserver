@@ -19,6 +19,7 @@
 #include <netdb.h>
 #include <fcntl.h>
 #include <string>
+#include <stdio.h>
 
 #include "UF.H"
 #include "UFIO.H"
@@ -166,7 +167,8 @@ int sockBuf = 0;
 UFIO* getConn(ResponseInfoObject* rIO)
 {
     //create the socket to build the connection on
-    UFIO* ufio = new UFIO(UFScheduler::getUFScheduler()->getRunningFiberOnThisThread());
+    //UFIO* ufio = new UFIO(UFScheduler::getUFScheduler()->getRunningFiberOnThisThread());
+    UFIO* ufio = new UFIO(UFScheduler::getUFScheduler()->getUF());//getRunningFiberOnThisThread());
     if(!ufio)
         return 0;
 

@@ -99,22 +99,20 @@ struct UFIO
     bool close();
 
     bool setFd(int fd, bool makeNonBlocking = true);
-
+    void setUF(UF* uf);
+    void setUFIOScheduler(UFIOScheduler* ufios);
 
     unsigned int getErrno() const;
     int getFd() const;
     UF* getUF() const;
-
     const std::string& getRemoteIP() const;
     unsigned int getRemotePort() const;
-
     UFIOScheduler* getUFIOScheduler() const;
-    void setUFIOScheduler(UFIOScheduler* ufios);
-
-    UFSleepInfo*                _sleepInfo;
 
     static void ufCreateThreadWithIO(pthread_t* tid, std::list<UF*>* ufsToStartWith);
-    static UFIOScheduler* getUFIOS();
+
+    UFSleepInfo*                _sleepInfo;
+    bool                        _markedActive;
 
 protected:
     int                         _fd;
@@ -129,11 +127,11 @@ protected:
     unsigned int                _remotePort;
 
     int                         _lastEpollFlag;
-    bool                        _amtReadLastTimeEqualToAskedAmt;
 };
 inline unsigned int UFIO::getErrno() const { return _errno; }
 inline int UFIO::getFd() const { return _fd; }
 inline UF* UFIO::getUF() const { return _uf; }
+inline void UFIO::setUF(UF* uf) { _uf = uf; }
 inline UFIOScheduler* UFIO::getUFIOScheduler() const { return _ufios; }
 inline void UFIO::setUFIOScheduler(UFIOScheduler* ufios) { _ufios = ufios; }
 inline const std::string& UFIO::getRemoteIP() const { return _remoteIP; };
@@ -144,25 +142,38 @@ inline unsigned int UFIO::getRemotePort() const { return _remotePort; };
 struct UFIOScheduler;
 //typedef map<pthread_t, UFIOScheduler*> ThreadFiberIOSchedulerMap;
 typedef hash_map<pthread_t, UFIOScheduler*, hash<uintptr_t> > ThreadFiberIOSchedulerMap;
+
+struct UFConnectionPool;
 struct UFIOScheduler
 {
-    UFIOScheduler() {}
-    virtual ~UFIOScheduler() {}
+    UFIOScheduler();
+    virtual ~UFIOScheduler();
 
     virtual bool setupForConnect(UFIO* ufio, TIME_IN_US to = 0) = 0;
     virtual bool setupForAccept(UFIO* ufio, TIME_IN_US to = 0) = 0;
     virtual bool setupForRead(UFIO* ufio, TIME_IN_US to = 0) = 0;
     virtual bool setupForWrite(UFIO* ufio, TIME_IN_US to = 0) = 0;
     virtual bool closeConnection(UFIO* ufio) = 0;
+    //TODO: support regular poll behavior
+    virtual bool rpoll(std::list<UFIO*>& ufioList, TIME_IN_US to = 0) = 0;
 
     virtual bool isSetup() { return false; }
     virtual void waitForEvents(TIME_IN_US timeToWait) = 0;
 
-    static ThreadFiberIOSchedulerMap _tfiosscheduler;
+    static UFIOScheduler* getUFIOS(pthread_t tid = 0);
+    static ThreadFiberIOSchedulerMap    _tfiosscheduler;
+    static pthread_key_t                _keyToIdentifySchedulerOnThread;
+
+    // connection pool
+    UFConnectionPool* getConnPool() const;
+
+protected:
+    UFConnectionPool*           _connPool;
 };
+inline UFConnectionPool* UFIOScheduler::getConnPool() const { return _connPool; }
 
 
-#define MAX_FDS_FOR_EPOLL 64*1024-1
+#define MAX_FDS_FOR_EPOLL 128*1024-1
 //typedef map<int, UFIO*> IntUFIOMap;
 typedef hash_map<int, UFIO*, hash<int> > IntUFIOMap;
 typedef std::multimap<TIME_IN_US, UFSleepInfo*> MapTimeUFIO;
@@ -180,6 +191,7 @@ struct EpollUFIOScheduler : public UFIOScheduler
     bool setupForRead(UFIO* ufio, TIME_IN_US to = 0);
     bool setupForWrite(UFIO* ufio, TIME_IN_US to = 0);
     bool closeConnection(UFIO* ufio);
+    bool rpoll(std::list<UFIO*>& ufioList, TIME_IN_US to = 0);
 
 
     void waitForEvents(TIME_IN_US timeToWait = -1);
@@ -188,6 +200,7 @@ struct EpollUFIOScheduler : public UFIOScheduler
 
 protected:
     UF*                             _uf;
+    UFScheduler*                    _ufs;
     int                             _epollFd;
     unsigned int                    _maxFds;
     struct epoll_event*             _epollEventStruct;
@@ -200,7 +213,9 @@ protected:
 
     bool addToScheduler(UFIO* ufio, 
                         void* inputInfo /*flags to identify how ot add*/, 
-                        TIME_IN_US to = 0);
+                        TIME_IN_US to = 0,
+                        bool wait = true, 
+                        bool runEpollCtl = false);
 
 
     list<UFSleepInfo*>  _availableSleepInfo;

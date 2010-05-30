@@ -13,7 +13,14 @@
 UFServer *UFStatSystem::server;
 
 std::map<std::string, uint32_t> UFStatSystem::stat_name_to_num;
-std::vector< std::pair<std::string, long long> > UFStatSystem::global_stats;
+
+Stat::Stat(std::string _name, long long _value) :
+  name(_name), value(_value)
+{
+
+}
+
+std::vector< Stat > UFStatSystem::global_stats;
 uint32_t UFStatSystem::MAX_STATS_ALLOWED = 500000;
 uint32_t UFStatSystem::NUM_STATS_ESTIMATE = 5000;
 static UFMutex statsMutex;
@@ -23,7 +30,7 @@ void UFStatSystem::incrementGlobal(uint32_t stat_num, long long stat_val)
     if(stat_num >= global_stats.size()) {
         return;
     }
-    global_stats[stat_num].second += stat_val;
+    global_stats[stat_num].value += stat_val;
 }
 
 bool UFStatSystem::increment(uint32_t stat_num, long long stat_val)
@@ -72,7 +79,7 @@ bool UFStatSystem::get(uint32_t stat_num, long long *stat_val)
     }
 
     // Get stat value from global map
-    *stat_val = global_stats[stat_num].second;
+    *stat_val = global_stats[stat_num].value;
     statsMutex.unlock(running_user_fiber);
     return true;
 }
@@ -158,7 +165,7 @@ bool UFStatSystem::registerStat(const char *stat_name, uint32_t *stat_num, bool 
     }
 
     // Regiter new stat. Store mapping from stat_num to name
-    global_stats.push_back(std::make_pair(stat_name, 0));
+    global_stats.push_back(Stat(stat_name, 0));
     *stat_num = global_stats.size() - 1;
     stat_name_to_num[stat_name] = *stat_num;
 
@@ -200,9 +207,9 @@ void UFStatSystem::init(UFServer* ufs)
 
 void UFStatSystem::clear()
 {
-    for(std::vector< std::pair<std::string, long long> >::iterator it = UFStatSystem::global_stats.begin();
+    for(std::vector< Stat >::iterator it = UFStatSystem::global_stats.begin();
             it != UFStatSystem::global_stats.end(); it++) {
-        it->second = 0;
+        it->value = 0;
     }
 }
 
@@ -492,10 +499,10 @@ void UFStatCollector::printStats(std::stringstream &printbuf) {
   UF* running_user_fiber = running_thread_scheduler->getRunningFiberOnThisThread();
   statsMutex.lock(running_user_fiber);
   
-  for(std::vector< std::pair<std::string, long long> >::const_iterator it = UFStatSystem::global_stats.begin();
+  for(std::vector< Stat >::const_iterator it = UFStatSystem::global_stats.begin();
       it != UFStatSystem::global_stats.end(); it++) {
-      if(it->second != 0 ) {
-          printbuf << "STAT " << it->first << " " << it->second << "\n";
+      if(it->value != 0 ) {
+          printbuf << "STAT " << it->name << " " << it->value << "\n";
       }
   }
   statsMutex.unlock(running_user_fiber);
@@ -536,11 +543,11 @@ UFStatCollector::getStatsWithPrefix(const std::string &stat_prefix, std::vector<
     UF* running_user_fiber = running_thread_scheduler->getRunningFiberOnThisThread();
     statsMutex.lock(running_user_fiber);
     // Get all stats which start with stat_prefix
-    for(std::vector< std::pair<std::string, long long> >::const_iterator it = UFStatSystem::global_stats.begin();
+    for(std::vector< Stat >::const_iterator it = UFStatSystem::global_stats.begin();
         it != UFStatSystem::global_stats.end(); it++) {
-        size_t found = it->first.find(stat_prefix);
+        size_t found = it->name.find(stat_prefix);
         if(found == 0) {
-            stat_names.push_back(it->first);
+            stat_names.push_back(it->name);
         }
     }
     statsMutex.unlock(running_user_fiber);

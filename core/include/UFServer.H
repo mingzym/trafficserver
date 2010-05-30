@@ -50,7 +50,7 @@ public:
 
     StringThreadMapping* getThreadList() { return &_threadList; };
     std::vector<pthread_t>* getThreadType(const std::string& type);
-    void addThread(const std::string& type, UFScheduler* ufScheduler, pthread_t tid=0);
+    void addThread(const std::string& type, UFScheduler* ufScheduler);
     void run();
 
 protected:
@@ -76,23 +76,19 @@ private:
     //start processing
 };
 
-
-
 struct UFServerThreadChooser : public UFIOAcceptThreadChooser
 {
     UFServerThreadChooser() { }
 
     std::pair<UFScheduler*, pthread_t> pickThread(int listeningFd);
-    void add(UFScheduler* ufs, pthread_t tid);
+    void add(UFScheduler* ufs, pthread_t tid)
+    {
+        _threadList.push_back(make_pair(ufs, tid));
+    }
 
 protected:
     std::vector<pair<UFScheduler*, pthread_t> > _threadList;
 };
-
-inline void UFServerThreadChooser::add(UFScheduler* ufs, pthread_t tid)
-{
-    _threadList.push_back(make_pair(ufs, tid));
-}
 
 inline std::pair<UFScheduler*, pthread_t> UFServerThreadChooser::pickThread(int listeningFd)
 {
