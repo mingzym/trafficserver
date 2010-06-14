@@ -3,7 +3,7 @@
 
 static void printHost(struct hostent* host , struct ares_addrttl *ttls = 0, int nttl = 0)
 {
-    return;
+  //  return;
         int i;
 	for(i = 0 ;  host->h_addr_list[i] != NULL; i++)
 	{
@@ -97,6 +97,7 @@ UFAresUFIO* UFAres::GetNewAresUFIO()
     if( list_ares_ufio_.empty() == true)
     {
 	aresio = new UFAresUFIO();
+	aresio->Init(mycall,aresio);
     }
     else
     {
@@ -114,7 +115,7 @@ void UFAres::ReleaseAresUFIO(UFAresUFIO *aresio)
     if(aresio)
     {
 	aresio->set_complete(false);
-	aresio->destroy();
+	//aresio->destroy();
 	list_ares_ufio_.push_back(aresio);
     }
     else
@@ -123,7 +124,7 @@ void UFAres::ReleaseAresUFIO(UFAresUFIO *aresio)
 }
 
 
-unsigned long int  UFAres::GetHostByName(const char *name, uint32_t timeout)
+UFHostEnt* UFAres::GetHostByName(const char *name, uint32_t timeout)
 {
     UFHostEnt* myhostent_ = GetCachedHostent(name);
     if(myhostent_ == NULL)
@@ -140,14 +141,13 @@ unsigned long int  UFAres::GetHostByName(const char *name, uint32_t timeout)
     if(ip != 0)
     {
             myhostent_->unlock(UFScheduler::getUF());
-	    return ip;
+	    return myhostent_;
     }
     else
     {
-	 myhostent_->ReleaseEntries();
+	myhostent_->ReleaseEntries();
 
 	UFAresUFIO *aresio = GetNewAresUFIO();
-	aresio->Init(mycall,aresio);
 	aresio->set_myhostent(myhostent_);
 	
 	ares_search(aresio->get_channel(),name,1, 1,arescallback,aresio);
@@ -165,7 +165,7 @@ unsigned long int  UFAres::GetHostByName(const char *name, uint32_t timeout)
         myhostent_ = aresio->get_myhostent(); 
         ReleaseAresUFIO(aresio);
         myhostent_->unlock(UFScheduler::getUF());
-        return myhostent_->GetFirstIP();
+        return myhostent_;
 	
     }
 }

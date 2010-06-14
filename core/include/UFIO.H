@@ -11,8 +11,6 @@ namespace std { using namespace __gnu_cxx; }
 
 
 
-typedef unsigned long long int TIME_IN_US;
-
 
 
 struct UFIOAcceptThreadChooser
@@ -68,7 +66,7 @@ struct UFIO
 
     //The fxn will call isSetup which will make the connection request non-blocking and setup the socket
     //TODO: support ipv6 connect
-    int connect(const struct sockaddr *addr, int addrlen, TIME_IN_US timeout);
+    bool connect(const struct sockaddr *addr, int addrlen, TIME_IN_US timeout);
 
     //since this is most likely going to be run on an edge trigger system
     //reads should be done in such a manner so that if the read call
@@ -113,6 +111,7 @@ struct UFIO
 
     UFSleepInfo*                _sleepInfo;
     bool                        _markedActive;
+    bool                        _active;
 
 protected:
     int                         _fd;

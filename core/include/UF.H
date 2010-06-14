@@ -26,6 +26,8 @@ enum UFStatus
     COMPLETED           = 4
 };
 
+typedef unsigned long long int TIME_IN_US;
+
 //create the type of UF you'd like to pass into the accept handler
 typedef unsigned long long int UFId;
 struct UFScheduler;
@@ -162,7 +164,7 @@ struct UFScheduler
     bool addFiberToScheduler(UF* uf,      /* the UF to add */
                              pthread_t tid = 0); /* the thread to add the UF to */
     //add the fxn to add multiple ufs in one shot (if they're on one tid)
-    bool addFibersToScheduler(const std::list<UF*>& ufList, 
+    bool addFiberToScheduler(const std::list<UF*>& ufList, 
                               pthread_t tid = 0);
 
 
@@ -235,11 +237,12 @@ protected:
     list<UFWaitInfo*>  _availableWaitInfo;
     UFWaitInfo* getWaitInfo();
     void releaseWaitInfo(UFWaitInfo& ufsi);
+    bool addFiberToSelf(UF* uf);
+    bool addFiberToAnotherThread(const std::list<UF*>& ufList, pthread_t tid);
 
 public:
     UFMutex testingCondTimedWait;
 };
-
 inline size_t UFScheduler::getActiveRunningListSize() const { return _activeRunningListSize; }
 inline bool UFScheduler::shouldExit() const { return (_exitJustMe || _exit) ? true : false; }
 inline unsigned long long int UFScheduler::getAmtToSleep() const { return _amtToSleep; }

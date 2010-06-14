@@ -21,22 +21,25 @@ LIB_DIR=../lib
 all: $(LIB_DIR)/libUF.a
 
 $(ARES_LIB): $(ARES_SRC)
-	pushd $(ARESDIR)/$(ARES) && ./configure && gmake && popd
+	cd $(ARESDIR)/$(ARES) && ./configure && make
 
 $(ARES_SRC):
 	if [ ! -d $(ARESDIR)/$(ARES) ] ; then \
-	   pushd $(ARESDIR) && \
+	   rm $(ARESDIR)/$(ARES_SRC_FILE); \
+	   cd $(ARESDIR) && \
 	   wget http://c-ares.haxx.se/$(ARES_SRC_FILE) && \
-	   tar xzf ./$(ARES_SRC_FILE) && popd; \
+	   gpg --keyserver hkp://pgp.mit.edu --recv-keys 0x279D5C91 && \
+	   gpg --verify ./$(ARES_GPG) ./$(ARES_SRC_FILE) && \
+	   tar xzf ./$(ARES_SRC_FILE); \
 	fi
 
-$(LIB_DIR)/UF.o: UF.C $(INCLUDE_DIR)/UF.H
+$(LIB_DIR)/UF.o: UF.C $(INCLUDE_DIR)/UF.H UFSwapContext.H
 	$(CXX) -c $(CPPFLAGS) $(CXXFLAGS) -o $(LIB_DIR)/UF.o UF.C
 
 $(LIB_DIR)/UFPC.o: UFPC.C $(INCLUDE_DIR)/UFPC.H $(LIB_DIR)/UF.o
 	$(CXX) -c $(CPPFLAGS) $(CXXFLAGS) -o $(LIB_DIR)/UFPC.o UFPC.C
 
-$(LIB_DIR)/UFConnectionPoolImpl.o: UFConnectionPoolImpl.C $(INCLUDE_DIR)/UFConnectionPool.H UFConnectionPoolImpl.H $(LIB_DIR)/UF.o $(LIB_DIR)/UFIO.o
+$(LIB_DIR)/UFConnectionPoolImpl.o: $(LIB_DIR)/UFAres.o UFConnectionPoolImpl.C $(INCLUDE_DIR)/UFConnectionPool.H UFConnectionPoolImpl.H $(LIB_DIR)/UF.o $(LIB_DIR)/UFIO.o
 	$(CXX) -c $(CPPFLAGS) $(CXXFLAGS) -o $(LIB_DIR)/UFConnectionPoolImpl.o UFConnectionPoolImpl.C
 
 $(LIB_DIR)/UFIO.o: UFIO.C $(INCLUDE_DIR)/UFIO.H $(LIB_DIR)/UF.o
@@ -48,14 +51,20 @@ $(LIB_DIR)/UFAres.o: UFAres.C $(INCLUDE_DIR)/UFAres.H $(INCLUDE_DIR)/UFDNS.H $(I
 $(LIB_DIR)/UFStatSystem.o: UFStatSystem.C $(INCLUDE_DIR)/UFStatSystem.H $(LIB_DIR)/UFIO.o $(LIB_DIR)/UF.o
 	$(CXX) -c $(CPPFLAGS) $(CXXFLAGS) -o $(LIB_DIR)/UFStatSystem.o UFStatSystem.C
 
-$(LIB_DIR)/UFServer.o: UFServer.C $(INCLUDE_DIR)/UFServer.H $(LIB_DIR)/UF.o $(LIB_DIR)/UFIO.o $(LIB_DIR)/UFStatSystem.o $(LIB_DIR)/UFConnectionPoolImpl.o
+$(LIB_DIR)/UFStats.o: UFStats.C $(INCLUDE_DIR)/UFStats.H $(LIB_DIR)/UFStatSystem.o
+	$(CXX) -c $(CPPFLAGS) $(CXXFLAGS) -o $(LIB_DIR)/UFStats.o UFStats.C
+
+$(LIB_DIR)/UFConf.o: UFConf.C $(INCLUDE_DIR)/UFConf.H
+	$(CXX) -c $(CPPFLAGS) $(CXXFLAGS) -o $(LIB_DIR)/UFConf.o UFConf.C
+
+$(LIB_DIR)/UFServer.o: UFServer.C $(INCLUDE_DIR)/UFServer.H $(LIB_DIR)/UF.o $(LIB_DIR)/UFIO.o $(LIB_DIR)/UFStatSystem.o $(LIB_DIR)/UFStats.o $(LIB_DIR)/UFConf.o $(LIB_DIR)/UFConnectionPoolImpl.o
 	$(CXX) -c $(CPPFLAGS) $(CXXFLAGS) -o $(LIB_DIR)/UFServer.o UFServer.C
 
-$(LIB_DIR)/libUF.a: $(LIB_DIR)/UF.o $(LIB_DIR)/UFPC.o $(LIB_DIR)/UFIO.o $(LIB_DIR)/UFStatSystem.o $(LIB_DIR)/UFServer.o \
-	$(LIB_DIR)/UFConnectionPoolImpl.o  $(LIB_DIR)/UFAres.o $(ARES_LIB)
-	$(AR) $(ARFLAGS) $(LIB_DIR)/libUF.a $(ARES_LIB) \
-	$(LIB_DIR)/UF.o $(LIB_DIR)/UFIO.o $(LIB_DIR)/UFStatSystem.o $(LIB_DIR)/UFServer.o \
-	$(LIB_DIR)/UFConnectionPoolImpl.o $(LIB_DIR)/UFAres.o $(LIB_DIR)/UFPC.o
+$(LIB_DIR)/UFSwapContext.o: UFSwapContext.S
+	$(CC) -c -o $@ $^
+
+$(LIB_DIR)/libUF.a: $(LIB_DIR)/UF.o $(LIB_DIR)/UFPC.o $(LIB_DIR)/UFIO.o $(LIB_DIR)/UFStatSystem.o $(LIB_DIR)/UFStats.o $(LIB_DIR)/UFConf.o $(LIB_DIR)/UFServer.o $(LIB_DIR)/UFSwapContext.o $(LIB_DIR)/UFConnectionPoolImpl.o  $(LIB_DIR)/UFAres.o $(ARES_LIB)
+	$(AR) $(ARFLAGS) $(LIB_DIR)/libUF.a $(ARESDIR)/$(ARES)/.libs/*.o $^
 	$(RANLIB) $(LIB_DIR)/libUF.a
 
 clean: 

@@ -1,5 +1,7 @@
 #include "UFIO.H"
 #include "UFConnectionPool.H"
+#include "UFStatSystem.H"
+#include "UFStats.H"
 #include <netdb.h>
 #include <sys/socket.h> 
 #include <sys/time.h> 
@@ -39,13 +41,12 @@ void UFIO::reset()
     _lastEpollFlag = 0;
     _sleepInfo = 0;
     _markedActive = false;
+    _active = true;
 }
 
 UFIO::~UFIO()
 {
     close();
-    if(_sleepInfo)
-        _sleepInfo->_ufio = 0;
 }
 
 UFIO::UFIO(UF* uf, int fd)
@@ -275,7 +276,7 @@ void UFIO::accept(UFIOAcceptThreadChooser* ufiotChooser,
                 result = ufiotChooser->pickThread(_fd);
                 ufs = result.first;
                 tToAddTo = result.second;
-                if(!ufs || !ufs->addFibersToScheduler(listOfUFsToAdd, tToAddTo))
+                if(!ufs || !ufs->addFiberToScheduler(listOfUFsToAdd, tToAddTo))
                 {
                     cerr<<"couldnt find thread to assign "<<acceptFd<<" or couldnt add fiber to scheduler"<<endl;
                     exit(1);
@@ -293,7 +294,7 @@ void UFIO::accept(UFIOAcceptThreadChooser* ufiotChooser,
             result = ufiotChooser->pickThread(_fd);
             ufs = result.first;
             tToAddTo = result.second;
-            if(!ufs || !ufs->addFibersToScheduler(listOfUFsToAdd, tToAddTo))
+            if(!ufs || !ufs->addFiberToScheduler(listOfUFsToAdd, tToAddTo))
             {
                 cerr<<"couldnt find thread to assign "<<acceptFd<<" or couldnt add fiber to scheduler"<<endl;
                 exit(1);
@@ -333,8 +334,11 @@ ssize_t UFIO::read(void *buf, size_t nbyte, TIME_IN_US timeout)
     while(1)
     {
         n = ::read(_fd, buf, nbyte);
-        if(n > 0)
+        if(n > 0) 
+        {
+            UFStatSystem::increment(UFStats::bytesRead, n);
             return n;
+        }
         else if(n < 0)
         {
             if((errno == EAGAIN) || (errno == EWOULDBLOCK))
@@ -360,6 +364,11 @@ ssize_t UFIO::read(void *buf, size_t nbyte, TIME_IN_US timeout)
         else if(n == 0)
             break;
     }
+
+    // Increment stat for bytes written
+    if(n > 0)
+        UFStatSystem::increment(UFStats::bytesRead, n);
+
     return n;
 }
 
@@ -376,7 +385,10 @@ ssize_t UFIO::write(const void *buf, size_t nbyte, TIME_IN_US timeout)
         {
             amtWritten += n;
             if(amtWritten == nbyte)
+            {
+                UFStatSystem::increment(UFStats::bytesWritten, n);
                 return amtWritten;
+            }
             else
                 continue;
         }
@@ -404,15 +416,23 @@ ssize_t UFIO::write(const void *buf, size_t nbyte, TIME_IN_US timeout)
         else if(n == 0)
             break;
     }
+
+    // Increment stat for bytes written
+    if(n > 0)
+        UFStatSystem::increment(UFStats::bytesWritten, n);
+
     return n;
 }
 
-int UFIO::connect(const struct sockaddr *addr, 
+bool UFIO::connect(const struct sockaddr *addr, 
                int addrlen, 
                TIME_IN_US timeout)
 {
     if(!isSetup()) //create the socket and make the socket non-blocking
-        return -1;
+    {
+        _errno = EINVAL;
+        return false;
+    }
 
 
     //find the scheduler for this request
@@ -420,22 +440,24 @@ int UFIO::connect(const struct sockaddr *addr,
 
     while(::connect(_fd, addr, addrlen) < 0)
     {
-        _errno = errno;
         if(errno == EINTR)
             continue;
         else if(errno == EINPROGRESS || errno == EAGAIN)
         {
             if(!tmpUfios->setupForConnect(this, timeout))
             {
-                cerr<<"couldnt setup for connect - "<<strerror(errno)<<endl;
-                return -1;
+                _errno = errno;
+                return false;
             }
         }
         else
-            return -1;
+        {
+            _errno = errno;
+            return false;
+        }
     }
 
-    return 0;
+    return true;
 }
 
 int UFIO::sendto(const char *buf, int len, const struct sockaddr *to, int tolen, TIME_IN_US timeout)
@@ -994,8 +1016,10 @@ void EpollUFIOScheduler::waitForEvents(TIME_IN_US timeToWait)
                         exit(1);
                     }
                     ufio->_markedActive = true;
-                    //activate the fiber
-                    ufs->addFiberToScheduler(uf, 0);
+                    if(ufio->_active)
+                        //activate the fiber
+                        ufs->addFiberToScheduler(uf, 0);
+                    //else must be the case that no one is watching this ufio - such as in the case where the conn. pool holding onto the conn.
                 }
                 else
                 {
@@ -1057,7 +1081,7 @@ void EpollUFIOScheduler::waitForEvents(TIME_IN_US timeToWait)
                     }
                     ++beg;
                 }
-                ufs->addFibersToScheduler(ufsToAddToScheduler, 0);
+                ufs->addFiberToScheduler(ufsToAddToScheduler, 0);
             }
         }
 

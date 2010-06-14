@@ -31,6 +31,7 @@ class UFAresUFIO : public UFIO
 	
 	~UFAresUFIO()
 	{
+	    destroy();
 	    cerr<<"aresio destructor called"<<endl;
 	};
         
@@ -90,7 +91,7 @@ class UFAres : public UFDNS
     public:
 	 UFAres()  { };
 	 ~UFAres() { };
-	 unsigned long int GetHostByName(const char *name, uint32_t timeout = 0);
+	 UFHostEnt* GetHostByName(const char *name, uint32_t timeout = 0);
 	 hostent *GetHostByNameDebug(const char *name, uint32_t timeout = 0);
 	 hostent *GetHostByAddr(uint32_t ip , uint32_t timeout = 0, uint32_t family = AF_INET) { return NULL; };
 	 hostent *GetSrvByName(const char *name, uint32_t timeout = 0) {  return NULL; };

@@ -7,12 +7,27 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include "UFStatSystem.H"
+#include "UFStats.H"
 
 using namespace std;
 
 //TODO: handle signals later
 //TODO: create monitoring port later
 //
+//
+static string getPrintableTime()
+{
+    char asctimeDate[32];
+    asctimeDate[0] = '\0';
+    time_t now = time(0);
+    asctime_r(localtime(&now), asctimeDate);
+
+    string response = asctimeDate;
+    size_t loc = response.find('\n');
+    if(loc != string::npos)
+        response.replace(loc, 1, "");
+    return response;
+}
 
 void UFServer::reset()
 {
@@ -43,6 +58,8 @@ struct NewConnUF : public UF
 
         UFIOAcceptArgs* fiberStartingArgs = (UFIOAcceptArgs*) _startingArgs;
         ((UFServer*) fiberStartingArgs->args)->handleNewConnection(fiberStartingArgs->ufio);
+        // increment connections handled stat
+        UFStatSystem::increment(UFStats::connectionsHandled);
 
         //clear the client connection
         delete fiberStartingArgs->ufio;
@@ -77,14 +94,15 @@ struct AcceptRunner : public UF
             fd = UFIO::setupConnectionToAccept(ufserver->getBindingInterface(), ufserver->getPort() /*, deal w/ backlog*/);
         if(fd < 0)
         {
-            cerr<<"couldnt setup listen socket"<<endl;
+            cerr<<getPrintableTime()<<" "<<getpid()<<":couldnt setup listen socket"<<endl;
             exit(1);
         }
         if(!ufio || !ufio->setFd(fd, false/*has already been made non-blocking*/))
         {
-            cerr<<"couldnt setup accept thread"<<endl;
+            cerr<<getPrintableTime()<<" "<<getpid()<<":couldnt setup accept thread"<<endl;
             return;
         }
+
         ufio->accept(ufserver->_threadChooser, NewConnUF::_myLoc, ufserver, 0, 0);
     }
     AcceptRunner(bool registerMe = false)
@@ -112,12 +130,13 @@ void UFServer::startThreads()
     for(; i<MAX_THREADS_ALLOWED; i++)
     {
         UFIO::ufCreateThreadWithIO(&(thread[i]), new list<UF*>());
+        cerr<<getPrintableTime()<<" "<<getpid()<<": created thread (with I/O) - "<<thread[i]<<endl;
         usleep(5000); //TODO: avoid the need for threadChooser to have a mutex - change to cond. var later
         //add the io threads to the thread chooser
         UFScheduler* ufs = UFScheduler::getUFScheduler(thread[i]);
         if(!ufs)
         {
-            cerr<<"didnt get scheduler for tid = "<<thread[i]<<endl;
+            cerr<<getPrintableTime()<<" "<<getpid()<<": didnt get scheduler for tid - "<<thread[i]<<endl;
             exit(1);
         }
         addThread("NETIO", ufs, thread[i]);
@@ -125,6 +144,9 @@ void UFServer::startThreads()
 
     //start the stats thread
     UFStatSystem::init(this);
+
+    // Register server stats
+    UFStats::registerStats();
 
     preAccept();
     //start the accept thread
@@ -135,11 +157,10 @@ void UFServer::startThreads()
         list<UF*>* ufsToAdd = new list<UF*>();
         ufsToAdd->push_back(ar);
         UFIO::ufCreateThreadWithIO(&(thread[i]), ufsToAdd);
-
         usleep(5000); //TODO: let the thread finish initializing 
         addThread("ACCEPT", 0, thread[i]);
+        cerr<<getPrintableTime()<<" "<<getpid()<<": created accept thread (with I/O) - "<<thread[i]<<endl;
     }
-
 
 
     //wait for the threads to finish
@@ -161,11 +182,11 @@ void UFServer::run()
     _listenFd = UFIO::setupConnectionToAccept(_addressToBindTo.c_str(), _port); //TODO:set the backlog
     if(_listenFd < 0)
     {
-        cerr<<"couldnt setup listen socket"<<endl;
+        cerr<<getPrintableTime()<<" "<<getpid()<<": couldnt setup listen socket "<<strerror(errno)<<endl;
         exit(1);
     }
 
-    if(!MAX_PROCESSES_ALLOWED) //an option to easily debug processes
+    if(!MAX_PROCESSES_ALLOWED) //an option to easily debug processes (or to only run in threaded mode)
     {
         preThreadRun();
         startThreads();
@@ -181,7 +202,7 @@ void UFServer::run()
             unsigned int pid = fork();
             if(pid < 0)
             {
-                cerr<<"("<<getpid()<<")(P): couldnt create child# : "<<strerror(errno)<<endl;
+                cerr<<getPrintableTime()<<" "<<getpid()<<": (P): couldnt create child# : "<<strerror(errno)<<endl;
                 exit(1);
             }
             if(!pid) //child listens to conns
@@ -195,6 +216,7 @@ void UFServer::run()
                 startThreads();
                 exit(0);
             }
+            cerr<<getPrintableTime()<<" "<<getpid()<<": (P): started child process: "<<pid<<endl;
             _childProcesses[pid] = time(0);
             postBetweenFork(pid);
         }
@@ -206,19 +228,18 @@ void UFServer::run()
         else if(child_pid < 0)
         {
             if(errno != ECHILD)
-                cerr<<"("<<getpid()<<")(P): waitpid error: "<<strerror(errno)<<endl;
+                cerr<<getPrintableTime()<<" "<<getpid()<<": (P): waitpid error:"<<endl;
         }
         else if(child_pid > 0)
         {
-            cerr<<"("<<getpid()<<")(P): child_pid "<<child_pid<<" died "<<endl;
+            cerr<<getPrintableTime()<<" "<<getpid()<<")(P): child_pid "<<child_pid<<" died "<<endl;
             map<int, time_t>::iterator itr = _childProcesses.find(child_pid);
             if(itr != _childProcesses.end()) 
                 _childProcesses.erase(itr);
-            //parentChildDeathHandler(child_pid); TODO
         }
 
         //we've been asked to bail
-        if(MAX_PROCESSES_ALLOWED && !_childProcesses.size())
+        if(!MAX_PROCESSES_ALLOWED && !_childProcesses.size())
             break;
 
         //let the parent rest
@@ -241,7 +262,7 @@ void UFServer::addThread(const std::string& type, UFScheduler* ufScheduler, pthr
     }
     index->second->push_back(tid);
 
-    if(ufScheduler)
+    if(ufScheduler && type == "NETIO")
         _threadChooser->add(ufScheduler, tid);
 }
 

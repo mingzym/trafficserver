@@ -3,7 +3,7 @@
 
 #include "UF.H"
 #include "UFIO.H"
-
+class UFHostEnt;
 class UFDNS : public UFIO
 {
    public:
@@ -19,7 +19,7 @@ class UFDNS : public UFIO
        virtual ~UFDNS() { };
        
        virtual struct hostent *GetHostByNameDebug(const char *name, uint32_t timeout = 0) = 0 ;
-       virtual unsigned long int GetHostByName(const char *name, uint32_t timeout = 0) = 0;
+       virtual UFHostEnt* GetHostByName(const char *name, uint32_t timeout = 0) = 0;
        virtual struct hostent *GetHostByAddr(uint32_t ip , uint32_t timeout = 0, uint32_t family = AF_INET) = 0 ;
        virtual struct hostent *GetSrvByName(const char *name, uint32_t = 0) = 0 ;
        

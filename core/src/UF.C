@@ -2,33 +2,40 @@
 #include "UFConnectionPool.H"
 
 #include <string.h>
-
 #include <iostream>
 #include <errno.h>
 #include <stdlib.h>
-
 #include <unistd.h>
 #include <signal.h>
 #include <stdio.h>
 #include <malloc.h>
 #include <sys/mman.h>
+#include "UFSwapContext.H"
 
 using namespace std;
 
+#if __WORDSIZE == 64
+static void runFiber(unsigned int lo, unsigned int hi)
+#else
 static void runFiber(void* args)
+#endif
 {
+#if __WORDSIZE == 64
+    UF* uf = (UF*)((((unsigned long)hi)<<32)+(unsigned long)lo);
+#else
     if(!args)
         return;
-
     UF* uf = (UF*)args;
+#endif
     uf->run();
     uf->_status = COMPLETED;
 }
 
 ///////////////UF/////////////////////
-UFFactory* UFFactory::_instance = 0;;
+UFFactory* UFFactory::_instance = 0;
 const unsigned int DEFAULT_STACK_SIZE = 4*4096;
 UFId UF::_globalId = 0;
+
 UF::UF()
 { 
     _startingArgs = 0;
@@ -156,97 +163,119 @@ UFScheduler::UFScheduler()
     _amtToSleep = 0;
 }
 
-UFScheduler::~UFScheduler()
+UFScheduler::~UFScheduler() { /*pthread_key_delete(_specific_key);*/ }
+
+bool UFScheduler::addFiberToSelf(UF* uf)
 {
-    //pthread_key_delete(_specific_key);
+    if(uf->_status == WAITING_TO_RUN) //UF is already in the queue
+        return true;
+    uf->_status = WAITING_TO_RUN;
+    if(uf->_parentScheduler) //probably putting back an existing uf into the active list
+    {
+        if(uf->_parentScheduler == this) //check that we're scheduling for the same thread
+        {
+            _activeRunningList.push_back(uf); ++_activeRunningListSize;
+            return true;
+        }
+        else
+        {
+            cerr<<uf<<" uf is not part of scheduler, "<<this<<" its part of "<<uf->_parentScheduler<<endl;
+            abort(); //TODO: remove the abort
+            return false;
+        }
+    }
+
+    //create a new context
+    uf->_parentScheduler = this;
+    uf->_UFContext.uc_link = &_mainContext;
+
+    getcontext(&(uf->_UFContext));
+    errno = 0;
+
+#if __WORDSIZE == 64
+    makecontext(&(uf->_UFContext), (void (*)(void)) runFiber, 2, (int)(ptrdiff_t)uf, (int)((ptrdiff_t)uf>>32));
+#else
+    makecontext(&(uf->_UFContext), (void (*)(void)) runFiber, 1, (void*)uf);
+#endif
+    if(errno != 0)
+    {
+        cerr<<"error while trying to run makecontext"<<endl;
+        return false;
+    }
+    _activeRunningList.push_back(uf); ++_activeRunningListSize;
+    return true;
 }
 
+bool UFScheduler::addFiberToAnotherThread(const list<UF*>& ufList, pthread_t tid)
+{
+    //find the other thread -- 
+    //TODO: have to lock before looking at this map - 
+    //since it could be changed if more threads are added later - not possible in the test that is being run (since the threads are created before hand)
+    UF* uf = 0;
+    list<UF*>::const_iterator beg = ufList.begin();
+    list<UF*>::const_iterator ending = ufList.end();
+    ThreadUFSchedulerMap::iterator index = _threadUFSchedulerMap.find(tid);
+    if(index == _threadUFSchedulerMap.end())
+    {
+        cerr<<"couldnt find the scheduler associated with "<<tid<<" for uf = "<<*beg<<endl;
+        ThreadUFSchedulerMap::iterator beg = _threadUFSchedulerMap.begin();
+        return false;
+    }
+
+    UFScheduler* ufs = index->second;
+    pthread_mutex_lock(&(ufs->_mutexToNominateToActiveList));
+    for(; beg != ending; ++beg)
+    {
+        uf = *beg;
+        ufs->_nominateToAddToActiveRunningList.push_back(uf);
+    }
+    pthread_cond_signal(&(ufs->_condToNominateToActiveList));
+    pthread_mutex_unlock(&(ufs->_mutexToNominateToActiveList));
+    ufs->notifyUF();
+    return true;
+}
 
 bool UFScheduler::addFiberToScheduler(UF* uf, pthread_t tid)
 {
     if(!uf)
     {
-        cerr<<"returning cause there is a scheduler already"<<endl;
+        cerr<<"null uf provided to scheduler"<<endl;
         return false;
     }
 
-    list<UF*> ufList;
-    ufList.push_back(uf);
-    return addFibersToScheduler(ufList, tid);
+    //adding to the same scheduler and as a result thread as the current job
+    if(!tid || (tid == pthread_self()))
+        return addFiberToSelf(uf);
+    else //adding to some other threads' scheduler
+    {
+        list<UF*> l;
+        l.push_back(uf);
+        return addFiberToAnotherThread(l, tid);
+    }
 }
 
-bool UFScheduler::addFibersToScheduler(const list<UF*>& ufList, pthread_t tid)
+bool UFScheduler::addFiberToScheduler(const list<UF*>& ufList, pthread_t tid)
 {
     if(ufList.empty())
         return true;
 
+    //adding to the same scheduler and as a result thread as the current job
     UF* uf = 0;
     list<UF*>::const_iterator beg = ufList.begin();
     list<UF*>::const_iterator ending = ufList.end();
-    //adding to the same scheduler and as a result thread as the current job
     if(!tid || (tid == pthread_self()))
     {
         for(; beg != ending; ++beg)
         {
             uf = *beg;
-            if(uf->_status == WAITING_TO_RUN) //UF is already in the queue
+            if(addFiberToSelf(uf))
                 continue;
-            uf->_status = WAITING_TO_RUN;
-            if(uf->_parentScheduler) //probably putting back an existing uf into the active list
-            {
-                if(uf->_parentScheduler == this) //check that we're scheduling for the same thread
-                {
-                    _activeRunningList.push_back(uf); ++_activeRunningListSize;
-                    continue;
-                }
-                else
-                {
-                    cerr<<uf<<" uf is not part of scheduler, "<<this<<" its part of "<<uf->_parentScheduler<<endl;
-                    abort(); //TODO: remove the abort
-                    return false;
-                }
-            }
-
-            //create a new context
-            uf->_parentScheduler = this;
-            uf->_UFContext.uc_link = &_mainContext;
-
-            getcontext(&(uf->_UFContext));
-            errno = 0;
-            makecontext(&(uf->_UFContext), (void (*)(void)) runFiber, 1, (void*)uf);
-            if(errno != 0)
-            {
-                cerr<<"error while trying to run makecontext"<<endl;
+            else
                 return false;
-            }
-            _activeRunningList.push_back(uf); ++_activeRunningListSize;
         }
     }
     else //adding to some other threads' scheduler
-    {
-        //find the other thread -- 
-        //TODO: have to lock before looking at this map - 
-        //since it could be changed if more threads are added later - not possible in the test that is being run (since the threads are created before hand)
-        ThreadUFSchedulerMap::iterator index = _threadUFSchedulerMap.find(tid);
-        if(index == _threadUFSchedulerMap.end())
-        {
-            cerr<<"couldnt find the scheduler associated with "<<tid<<" for uf = "<<*beg<<endl;
-            ThreadUFSchedulerMap::iterator beg = _threadUFSchedulerMap.begin();
-            return false;
-        }
-
-        UFScheduler* ufs = index->second;
-        pthread_mutex_lock(&(ufs->_mutexToNominateToActiveList));
-        for(; beg != ending; ++beg)
-        {
-            uf = *beg;
-            ufs->_nominateToAddToActiveRunningList.push_back(uf);
-        }
-        pthread_cond_signal(&(ufs->_condToNominateToActiveList));
-        pthread_mutex_unlock(&(ufs->_mutexToNominateToActiveList));
-        ufs->notifyUF();
-    }
-
+        return addFiberToAnotherThread(ufList, tid);
     return true;
 }
 
@@ -283,11 +312,14 @@ void UFScheduler::runScheduler()
             UF* uf = *ufBeg;
             _currentFiber = uf;
             uf->_status = RUNNING;
+#if __WORDSIZE == 64
+            uf_swapcontext(&_mainContext, &(uf->_UFContext));
+#else
             swapcontext(&_mainContext, &(uf->_UFContext));
+#endif
             _currentFiber = 0;
 
-            if(uf->_status == RUNNING) { }
-            else if(uf->_status == BLOCKED)
+            if(uf->_status == BLOCKED)
             {
                 ufBeg = _activeRunningList.erase(ufBeg); --_activeRunningListSize;
                 continue;
@@ -299,6 +331,7 @@ void UFScheduler::runScheduler()
                 continue;
             }
 
+            //else uf->_status == RUNNING
             uf->_status = WAITING_TO_RUN;
             ++ufBeg;
         }
@@ -771,7 +804,7 @@ void* setupThread(void* args)
 
     list<UF*>* ufsToStartWith = (list<UF*>*) args;
     UFScheduler ufs;
-    ufs.addFibersToScheduler(*ufsToStartWith, 0);
+    ufs.addFiberToScheduler(*ufsToStartWith, 0);
     delete ufsToStartWith;
 
     //run the scheduler
