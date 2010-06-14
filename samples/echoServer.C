@@ -1,11 +1,8 @@
-#include <iostream>
 #include <stdlib.h>
-
 #include "UFIO.H"
 #include "UFServer.H"
 
-using namespace std;
-
+unsigned long long int readTimeout = 0;
 struct EchoServer : public UFServer
 {
     EchoServer(char* interfaceIP, unsigned int port)
@@ -13,30 +10,21 @@ struct EchoServer : public UFServer
         _addressToBindTo = interfaceIP ? interfaceIP : "";
         _port = port;
     }
-    void handleNewConnection(UFIO* ufio);
-};
-
-unsigned long long int readTimeout = 0;
-void EchoServer::handleNewConnection(UFIO* ufio)
-{
-    if(!ufio)
+    void handleNewConnection(UFIO* ufio)
     {
-        cerr<<"couldnt create UFIO object"<<endl;
-        return;
+        if(!ufio) return;
+
+        char buf[256];
+        int amtRead = 0;
+        while ( ((amtRead = ufio->read(buf, 255, readTimeout)) > 0) && (ufio->write(buf, amtRead) == amtRead) ) {}
     }
-
-    char buf[256];
-    int amtRead = 0;
-    while ( ((amtRead = ufio->read(buf, 255, readTimeout)) > 0) && 
-            (ufio->write(buf, amtRead) == amtRead) ) {}
-}
-
+};
 
 int main(int argc, char** argv)
 {
     unsigned int numThreads = 8;
-    unsigned int numProcesses = 1;
     unsigned short int port = 8080;
+    unsigned int numProcesses = 1;
     if(argc > 1)
         numThreads = atoi(argv[1]);
     if(argc > 2)
@@ -53,6 +41,5 @@ int main(int argc, char** argv)
     ufecho.UF_STACK_SIZE                = 8192;
 
     ufecho.run();
-
     return 0;
 }

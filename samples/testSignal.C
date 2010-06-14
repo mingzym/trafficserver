@@ -19,7 +19,7 @@ struct TestProducer : public UF
             mut->broadcast();
             mut->unlock(uf);
             printf("%lu add\n", (unsigned long int) ((uintptr_t)(void*)uf));
-            uf->usleep(1000);
+            uf->usleep(10);
         }
     }
     UF* createUF() { return new TestProducer(); }
@@ -65,7 +65,7 @@ struct ConsumerWithLockOnly : public UF
             while(lastValue == value)
             {
                 mut->unlock(uf);
-                uf->usleep(100);
+                uf->usleep(10);
                 mut->lock(uf);
             }
             tmpValue = value;

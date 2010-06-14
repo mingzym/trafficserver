@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <algorithm>
 #include <errno.h>
-#include <vector>
+#include <set>
 #include <time.h>
 #include <sstream>
 #include <iostream>
@@ -24,6 +24,8 @@
 #include "UF.H"
 #include "UFIO.H"
 #include "UFServer.H"
+#include "UFConnectionPool.H"
+#include <vector>
 
 using namespace std;
 
@@ -76,7 +78,6 @@ struct ResponseInfoObject
 ResponseInfoObject overallInfo;
 pthread_mutex_t overallInfoTrackMutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_key_t threadUpdateOverallInfo;
-struct sockaddr_in rmt_addr;
 
 int GET_RESPONSE_TIMEOUT = 1*1000*1000;
 string DOUBLE_NEWLINE = "\r\n\r\n";
@@ -96,6 +97,7 @@ bool readData(UFIO* ufio, unsigned int timeout, bool& connClosed)
         {
             if(okToExitToEnd && (num_bytes_read == 0))
             {
+                cerr<<"okToExitToEnd = "<<okToExitToEnd<<endl;
                 connClosed = true;
                 return true;
             }
@@ -163,18 +165,18 @@ bool writeData(UFIO* ufio, const string& data)
     return ((amt_written == (int)data.length()) ? true : false);
 }
 
+string remote_addr = "";
 int sockBuf = 0;
 UFIO* getConn(ResponseInfoObject* rIO)
 {
-    //create the socket to build the connection on
-    //UFIO* ufio = new UFIO(UFScheduler::getUFScheduler()->getRunningFiberOnThisThread());
-    UFIO* ufio = new UFIO(UFScheduler::getUFScheduler()->getUF());//getRunningFiberOnThisThread());
-    if(!ufio)
+    UFConnectionPool* cpool = UFIOScheduler::getUFIOS()->getConnPool();
+    if(!cpool)
         return 0;
 
     struct timeval start,finish;
     gettimeofday(&start, 0);
-    if(ufio->connect((struct sockaddr*)&rmt_addr, sizeof(rmt_addr), CONNECT_AND_REQUEST_TIMEOUT) != 0)
+    UFIO* ufio = cpool->getConnection(remote_addr);
+    if(!ufio)
     {
         if(random()%100 < 10)
             cerr<<"connect error: "<<strerror(errno)<<endl;
@@ -275,7 +277,7 @@ void run_handler()
 
         if(connClosed)
         {
-            delete ufio;
+            UFIOScheduler::getUFIOS()->getConnPool()->releaseConnection(ufio, false);
             ufio = getConn(rIO);
             if(!ufio)
                 return;
@@ -283,52 +285,9 @@ void run_handler()
     }
 
 run_handler_done:
-    delete ufio;
+    UFIOScheduler::getUFIOS()->getConnPool()->releaseConnection(ufio, false);
 }
 
-
-
-void read_address(const char *str, struct sockaddr_in *sin)
-{
-    char host[128], *p;
-    struct hostent *hp;
-    short port;
-
-    strcpy(host, str);
-    if ((p = strchr(host, ':')) == NULL)
-    {
-        cerr<<"invalid host: "<<host<<endl;
-        exit(1);
-    }
-    *p++ = '\0';
-    port = (short) atoi(p);
-    if (port < 1)
-    {
-
-        cerr<<"invalid port: "<<port<<endl;
-        exit(1);
-    }
-
-    memset(sin, 0, sizeof(struct sockaddr_in));
-    sin->sin_family = AF_INET;
-    sin->sin_port = htons(port);
-    if (host[0] == '\0')
-    {
-        sin->sin_addr.s_addr = INADDR_ANY;
-        return;
-    }
-    sin->sin_addr.s_addr = inet_addr(host);
-    if (sin->sin_addr.s_addr == INADDR_NONE)
-    {
-        /* not dotted-decimal */
-        if ((hp = gethostbyname(host)) == NULL)
-        {
-            cerr<<"cant resolve address "<<host<<endl;
-            exit(1);
-        }
-        memcpy(&sin->sin_addr, hp->h_addr, hp->h_length);
-    }
-}
 
 struct ClientUF : public UF
 {
@@ -481,8 +440,8 @@ void SetupClientUF::run()
     overallInfo.write_error += rIO.write_error;
     overallInfo.read_error += rIO.read_error;
     overallInfo.num_user_fibers_running += rIO.num_user_fibers_running;
-    for(unsigned int i =0; i < rIO.results.size(); ++i)
-        overallInfo.results.push_back(rIO.results[i]);
+    for(vector<unsigned long long int>::iterator beg = rIO.results.begin(); beg != rIO.results.end(); ++beg)
+        overallInfo.results.push_back(*beg);
     pthread_mutex_unlock(&overallInfoTrackMutex);
 
 
@@ -548,7 +507,6 @@ void printResults()
     cout<<"max = "<<lastValue<<"us"<<endl;
 }
 
-string remote_addr = "";
 void print_info()
 {
     cerr<<"connecting to               = "<<remote_addr<<endl;
@@ -684,14 +642,6 @@ int main(int argc, char** argv)
     remote_addr = rem_addr + ":" + rem_port;
     print_info();
 
-    read_address(remote_addr.c_str(), &rmt_addr);
-    if (rmt_addr.sin_addr.s_addr == INADDR_ANY)
-    {
-        cerr<<"invalid remote address: "<<remote_addr<<endl;
-        exit(1);
-    }
-
-
 
     //create the threads
     pthread_t* thread = new pthread_t[NUM_THREADS];
@@ -709,6 +659,7 @@ int main(int argc, char** argv)
     for(i=0; i<NUM_THREADS; i++)
         pthread_join(thread[i], &status);
     delete [] thread;
+
 
     printResults();
 }

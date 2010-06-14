@@ -1,7 +1,7 @@
 #include <iostream>
 #include <stdlib.h>
 #include "UFPC.H"
-
+#include <stdio.h>
 
 UFProducer* p = 0;
 struct TestProducer : public UF
@@ -48,11 +48,10 @@ struct TestConsumer : public UF
                 uf->usleep(1000);
                 continue;
             }
-            UFProducerDataCode code = result->_ufpcCode;
+            int code = result->_ufpcCode;
             UFProducerData::releaseObj(result);
-            if(code == END)
+            if(code == 0 /* INDICATES AN END */)
                 break;
-            //printf("%lu cons %u\n", (unsigned long int) ((uintptr_t)(void*)uf), *((unsigned int*)result->_data));
             printf("%lu cons\n", (unsigned long int) ((uintptr_t)(void*)uf));
         }
         c->removeProducer(p);
