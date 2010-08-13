@@ -9,6 +9,9 @@
 #include <ares.h>
 #include "UFDNS.H"
 #include "UFHostEnt.H"
+#include <iostream>
+
+using namespace std;
 
 // for ares less then version 1.7.0
 //#ifndef ares_addrttl

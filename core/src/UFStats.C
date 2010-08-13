@@ -1,6 +1,7 @@
-#include "UFStats.H"
-#include "UFStatSystem.H"
+#include <UFStats.H>
+#include <UFStatSystem.H>
 
+uint32_t UFStats::currentConnections;
 uint32_t UFStats::connectionsHandled;
 uint32_t UFStats::txnSuccess;
 uint32_t UFStats::txnFail;
@@ -12,6 +13,7 @@ namespace UFStats
 {
     void registerStats(bool lock_needed)
     {
+        UFStatSystem::registerStat("connections.current", &currentConnections, lock_needed);
         UFStatSystem::registerStat("connections.handled", &connectionsHandled, lock_needed);
         UFStatSystem::registerStat("txn.success", &txnSuccess, lock_needed);
         UFStatSystem::registerStat("txn.fail", &txnFail, lock_needed);

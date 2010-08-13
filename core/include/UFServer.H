@@ -4,9 +4,10 @@
 #include <pthread.h>
 #include <map>
 #include <vector>
+#include <list>
 
-#include "UF.H"
-#include "UFIO.H"
+#include <UF.H>
+#include <UFIO.H>
 
 typedef std::map<std::string, std::vector<pthread_t>* > StringThreadMapping;
 struct UFServerThreadChooser;
@@ -26,10 +27,16 @@ public:
     unsigned int getProcessCount() const { return _childProcesses.size(); }
     unsigned int UF_STACK_SIZE;
     const char* getBindingInterface() const { return _addressToBindTo.c_str() ; }
-    unsigned int getPort() const { return _port ; }
-    unsigned int getListenFd() const { return _listenFd; }
-    unsigned int setListenFd(int fd) { return (_listenFd = fd); }
 
+    struct ListenSocket
+    {
+        unsigned short int port;
+        int fd;
+        ListenSocket(unsigned short int p = 0, int f = -1) : port(p), fd(f) { };
+    };
+    typedef std::list<ListenSocket> ListenSocketList;
+
+    const ListenSocketList &getListenSockets() const { return _listenSockets; }
 
     //functions that are allowed to be modified by the 
     //inherited class to provide customizable functionalities 
@@ -38,7 +45,9 @@ public:
     virtual void postBetweenFork(int childPid) {}
     virtual void postForkPreRun() {}
     virtual void preThreadRun() {}
+    virtual void postThreadRun() {}
     virtual void preThreadCreation() {}
+    virtual void postThreadCreation() {}
     virtual void preAccept() {}
 
 
@@ -50,15 +59,14 @@ public:
 
     StringThreadMapping* getThreadList() { return &_threadList; };
     std::vector<pthread_t>* getThreadType(const std::string& type);
-    void addThread(const std::string& type, UFScheduler* ufScheduler);
+    void addThread(const std::string& type, UFScheduler* ufScheduler, pthread_t tid=0);
     void run();
 
 protected:
     void reset();
 
     std::string                     _addressToBindTo;
-    unsigned int                    _port;
-    int                             _listenFd;
+    ListenSocketList                _listenSockets;
     unsigned int                    _listenBackLog;
 
     time_t                          _creationTime;
@@ -72,30 +80,39 @@ protected:
 
     void startThreads();
 
+    void _addListenPort(unsigned short int port)
+    {
+        _listenSockets.push_back(ListenSocket(port));
+    }
+
 private:
     //start processing
 };
+
+
 
 struct UFServerThreadChooser : public UFIOAcceptThreadChooser
 {
     UFServerThreadChooser() { }
 
     std::pair<UFScheduler*, pthread_t> pickThread(int listeningFd);
-    void add(UFScheduler* ufs, pthread_t tid)
-    {
-        _threadList.push_back(make_pair(ufs, tid));
-    }
+    void add(UFScheduler* ufs, pthread_t tid);
 
 protected:
-    std::vector<pair<UFScheduler*, pthread_t> > _threadList;
+    std::vector<std::pair<UFScheduler*, pthread_t> > _threadList;
 };
+
+inline void UFServerThreadChooser::add(UFScheduler* ufs, pthread_t tid)
+{
+    _threadList.push_back(std::make_pair(ufs, tid));
+}
 
 inline std::pair<UFScheduler*, pthread_t> UFServerThreadChooser::pickThread(int listeningFd)
 {
     static unsigned int lastLocUsed = 0;
     if(!_threadList.size())
     {
-        cerr<<"there has to be some fabric to hand the request to"<<endl;
+        std::cerr<<"there has to be some fabric to hand the request to"<<std::endl;
         exit(1);
     }
 

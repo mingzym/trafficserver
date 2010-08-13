@@ -1,15 +1,16 @@
 #include <string.h>
 #include <stdio.h>
-#include "UFStatSystem.H"
-#include "UF.H"
-#include "UFIO.H"
-#include "UFServer.H"
+#include <UFStatSystem.H>
+#include <UF.H>
+#include <UFIO.H>
+#include <UFServer.H>
 #include <iostream>
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 
+using namespace std;
 UFServer *UFStatSystem::server;
 
 std::map<std::string, uint32_t> UFStatSystem::stat_name_to_num;
@@ -126,9 +127,8 @@ bool UFStatSystem::get_current(uint32_t stat_num, long long *stat_val)
 bool UFStatSystem::get_current(const char *stat_name, long long *stat_val)
 {
     uint32_t stat_num;
-    if(!getStatNum(stat_name, stat_num)) {
+    if(!getStatNum(stat_name, stat_num))
         return false;
-    }
     return get_current(stat_num, stat_val);
 }
 
@@ -349,8 +349,9 @@ void StatCommandProcessing::run()
     char readbuf[1024];
     std::string readData;
     
-    while(1) {
-        if((readbytes = ufio->read(readbuf, 1023, 0)) <= 0)
+    while(1) 
+    {
+        if((readbytes = ufio->read(readbuf, 1023, 60000000)) <= 0)
             break;
 
         readData.append(readbuf, readbytes);
@@ -358,25 +359,26 @@ void StatCommandProcessing::run()
         if(readData.find("\r\n") == string::npos)
            continue;
            
-        if(readData.find("stats_current") != string::npos) {
+        if(readData.find("stats_current") != string::npos) 
+        {
             // Force a collect before printing out the stats
             UFStatSystem::collect();
             std::stringstream printbuf;
             UFStatCollector::printStats(printbuf);
-            if (ufio->write(printbuf.str().data(), printbuf.str().length()) == -1) {
+            if (ufio->write(printbuf.str().data(), printbuf.str().length()) == -1)
                 //failed write, break to close connection
                 break;
-            }
         }
-        else if (readData.find("stats") != string::npos) {
+        else if (readData.find("stats") != string::npos) 
+        {
             std::stringstream printbuf;
             UFStatCollector::printStats(printbuf);
-            if (ufio->write(printbuf.str().data(), printbuf.str().length()) == -1) {
+            if (ufio->write(printbuf.str().data(), printbuf.str().length()) == -1)
                     //failed write, break to close connection
                 break;
-            }
         }
-        else if (readData.find("stat ") != string::npos || readData.find("stat_current ") != string::npos) {
+        else if (readData.find("stat ") != string::npos || readData.find("stat_current ") != string::npos) 
+        {
             std::vector<std::string> stats;
             char stat_name[MAX_STAT_NAME_LENGTH];
             bzero(stat_name, MAX_STAT_NAME_LENGTH);
@@ -387,49 +389,49 @@ void StatCommandProcessing::run()
             bool get_current = false;
             if(readData.find("stat ") != string::npos)
                 start += strlen("stat ");
-            else {
+            else 
+            {
                 start += strlen("stat_current ");
                 get_current = true;
             }
             
-            while(sscanf(start, "%s%n", stat_name, &next) == 1) {
+            while(sscanf(start, "%s%n", stat_name, &next) == 1) 
+            {
                 // Prefix support
                 char *prefix_end = strchr(start, '*');
-                if(prefix_end != NULL) {
+                if(prefix_end != NULL) 
+                {
                     std::string prefix;
                     prefix.assign(start, prefix_end-start);
                     // Get all stats with the prefix
                     UFStatCollector::getStatsWithPrefix(prefix, stats);
                 }
-                else {
+                else
                     stats.push_back(stat_name);
-                }
                 bzero(stat_name, MAX_STAT_NAME_LENGTH);
                 start+=next;
             }
             std::stringstream printbuf;
             
             UFStatCollector::printStats(stats, printbuf, get_current);
-            if (ufio->write(printbuf.str().data(), printbuf.str().length()) == -1) {
+            if (ufio->write(printbuf.str().data(), printbuf.str().length()) == -1)
                 //failed write, break to close connection
                 break;
-            }
         }
-        else if (readData.find("help") != string::npos) {
-            if (ufio->write(cmdHelp, sizeof(cmdHelp)-1) == -1) {
+        else if (readData.find("help") != string::npos) 
+        {
+            if (ufio->write(cmdHelp, sizeof(cmdHelp)-1) == -1)
                 //failed write, break to close connection
                 break;
-            }
         }
-        else if (readData.find("quit") != string::npos) {
+        else if (readData.find("quit") != string::npos) 
             break;
-        }
-        else {
+        else 
+        {
             if ((ufio->write(cmdUnrec, sizeof(cmdUnrec)-1) == -1) ||
-                (ufio->write(cmdHelp, sizeof(cmdHelp)-1) == -1)) {
+                (ufio->write(cmdHelp, sizeof(cmdHelp)-1) == -1))
                 //failed write, break to close connection
                 break;
-            }
         }
         readData.clear();
     } // END while loop
@@ -444,12 +446,24 @@ int StatCommandListenerRun::_myLoc = -1;
 StatCommandListenerRun* StatCommandListenerRun::_self = new StatCommandListenerRun(true);
 void StatCommandListenerRun::run()
 {
-    int fd = UFIO::setupConnectionToAccept(0, UFStatCollector::_statCommandPort, 16000);
-    if(fd < 0)
+    int fd;
+    unsigned int counter = 0;
+    do
     {
-        cerr<<"couldnt setup accept thread for stat port "<<strerror(errno)<<endl;
-        return;
-    }
+        UFStatCollector::_statCommandPort += counter;
+        fd = UFIO::setupConnectionToAccept(0, UFStatCollector::_statCommandPort, 16000);
+        if(fd < 0)
+        {
+            cerr<<"couldnt setup accept thread for stat port "<<strerror(errno)<<endl;
+            if(counter++ == 50) //try upto 50 times
+                return;
+            continue;
+        }
+        else
+            break;
+    } while(1);
+    cerr<<"setup stat command port at "<<UFStatCollector::_statCommandPort;
+
 
     UFIO* ufio = new UFIO(UFScheduler::getUF());
     if(!ufio)
@@ -461,7 +475,7 @@ void StatCommandListenerRun::run()
     ufio->setFd(fd, false);
 
     StatThreadChooser ufiotChooser;
-    ufio->accept(&ufiotChooser, StatCommandProcessing::_myLoc, 0, 0, 0);
+    ufio->accept(&ufiotChooser, StatCommandProcessing::_myLoc, UFStatCollector::_statCommandPort, 0, 0);
 }
 
 void* UFStatCollector::scheduler(void *args)
@@ -469,70 +483,66 @@ void* UFStatCollector::scheduler(void *args)
     if(!args)
         return 0;
 
+    cerr<<getPrintableTime()<<" "<<getpid()<<": created stats thread (with I/O) - "<<pthread_self()<<endl;
     // add jobs to scheduler
     UFScheduler ufs;
 
+    //insertion has to be done in a LIFO (stack) manner
     // stat collector
     ufs.addFiberToScheduler(new CollectorRunner());
-
-    // set thread for stat command listener to run on
-    StatThreadChooser::_accept_thread = make_pair(&ufs, pthread_self());
-    
+    // stat command listener port
+    ufs.addFiberToScheduler(new StatCommandListenerRun());
+    ((UFServer*) args)->addThread("STAT_COLLECTOR", &ufs);
     // io scheduler
     ufs.addFiberToScheduler(new IORunner());
     
-    // stat command listener
-    ufs.addFiberToScheduler(new StatCommandListenerRun());
-    ((UFServer*) args)->addThread("STAT_COLLECTOR", &ufs);
+    // set thread for stat command listener to run on
+    StatThreadChooser::_accept_thread = make_pair(&ufs, pthread_self());
+    
     ufs.runScheduler();
     return 0;
 }
 
 //----------------------------------------------------------
-void UFStatCollector::printStats(std::stringstream &printbuf) {
-   printbuf <<  "Cache stats: \n"
+void UFStatCollector::printStats(std::stringstream &printbuf) 
+{
+    printbuf <<  "Cache stats: \n"
                 "-----------------------------------------------------------------------------\n";
-   
-  printbuf << "TIME " << _startTime <<"\n";
+    printbuf << "TIME " << _startTime <<"\n";
 
-  UFScheduler* running_thread_scheduler = UFScheduler::getUFScheduler(pthread_self());
-  UF* running_user_fiber = running_thread_scheduler->getRunningFiberOnThisThread();
-  statsMutex.lock(running_user_fiber);
+    UFScheduler* running_thread_scheduler = UFScheduler::getUFScheduler(pthread_self());
+    UF* running_user_fiber = running_thread_scheduler->getRunningFiberOnThisThread();
+    statsMutex.lock(running_user_fiber);
   
-  for(std::vector< Stat >::const_iterator it = UFStatSystem::global_stats.begin();
-      it != UFStatSystem::global_stats.end(); it++) {
-      if(it->value != 0 ) {
-          printbuf << "STAT " << it->name << " " << it->value << "\n";
-      }
-  }
-  statsMutex.unlock(running_user_fiber);
+    for(std::vector< Stat >::const_iterator it = UFStatSystem::global_stats.begin();
+        it != UFStatSystem::global_stats.end(); it++) 
+        printbuf << "STAT " << it->name << " " << it->value << "\n";
+    statsMutex.unlock(running_user_fiber);
 
-  printbuf << "END\n";
+    printbuf << "END\n";
 }
 
-void UFStatCollector::printStat(const char *stat_name, std::stringstream &printbuf, bool current) {
-    // Print only non zero stats
+void UFStatCollector::printStat(const char *stat_name, std::stringstream &printbuf, bool current) 
+{
     long long stat_val = 0;
     bool stat_get_status;
-    if(current) {
+    if(current)
         stat_get_status = UFStatSystem::get_current(stat_name, &stat_val);
-    }
-    else {
+    else
         stat_get_status = UFStatSystem::get(stat_name, &stat_val);
-    }
     
-    if(stat_get_status && stat_val != 0) {
+    //if(stat_get_status && stat_val != 0) {
+    if(stat_get_status)
         printbuf << "STAT " << stat_name << " " << stat_val << "\n";
-    }
 }
 
-void UFStatCollector::printStats(const std::vector<std::string> &stat_names, std::stringstream &printbuf, bool current) {
-  printbuf << "TIME " << _startTime <<"\n";
+void UFStatCollector::printStats(const std::vector<std::string> &stat_names, std::stringstream &printbuf, bool current)
+{
+    printbuf << "TIME " << _startTime <<"\n";
     for(std::vector<std::string>::const_iterator it = stat_names.begin();
         it != stat_names.end();
-        it++) {
+        it++)
         printStat(it->c_str(), printbuf, current);
-    }
    printbuf << "END\n";
 }
 
@@ -544,11 +554,11 @@ UFStatCollector::getStatsWithPrefix(const std::string &stat_prefix, std::vector<
     statsMutex.lock(running_user_fiber);
     // Get all stats which start with stat_prefix
     for(std::vector< Stat >::const_iterator it = UFStatSystem::global_stats.begin();
-        it != UFStatSystem::global_stats.end(); it++) {
+        it != UFStatSystem::global_stats.end(); it++) 
+    {
         size_t found = it->name.find(stat_prefix);
-        if(found == 0) {
+        if(!found)
             stat_names.push_back(it->name);
-        }
     }
     statsMutex.unlock(running_user_fiber);
 }

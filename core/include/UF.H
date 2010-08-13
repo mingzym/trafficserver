@@ -2,7 +2,6 @@
 #define USERTHREADS_H
 
 #include <sys/time.h>
-
 #include <iostream>
 #include <map>
 #include <stdint.h>
@@ -10,12 +9,16 @@
 #include <set>
 #include <vector>
 #include <list>
+#include <deque>
 #include <ucontext.h>
 #include <pthread.h>
 #include <errno.h>
 
-using namespace std;
+#include <UFSwapContext.H>
+//#include <ufutil/Factory.H>
+
 namespace std { using namespace __gnu_cxx; }
+std::string getPrintableTime();
 
 enum UFStatus
 {
@@ -23,17 +26,20 @@ enum UFStatus
     WAITING_TO_RUN      = 1,
     BLOCKED             = 2,
     RUNNING             = 3,
-    COMPLETED           = 4
+    COMPLETED           = 4,
+    YIELDED             = 5
 };
 
-typedef unsigned long long int TIME_IN_US;
+typedef long long int TIME_IN_US;
 
 //create the type of UF you'd like to pass into the accept handler
 typedef unsigned long long int UFId;
 struct UFScheduler;
-struct UFMutex;
-struct UF
+
+struct UFFact;
+class UF
 {
+public:
     friend class UFScheduler;
     friend class UFMutex;
 
@@ -52,34 +58,72 @@ struct UF
     //otherwise behavior is unexpected
     void                 yield();
     ///must be called after the fiber is added to a scheduler
-    void                 usleep(unsigned long long int sleepAmtInUs);
-    static void          gusleep(unsigned long long int sleepAmtInUs);
+    void                 usleep(TIME_IN_US sleepAmtInUs);
+    static void          gusleep(TIME_IN_US sleepAmtInUs);
     ///simply block the fiber
     void                 block();
     UFStatus             getStatus() const;
+    unsigned long long int getLastRun() const;
 
 
     UFStatus             _status;
     void*                _startingArgs;
-
-protected:
-    static UFId          _globalId;
-    UFId                 _myId;
-    UFScheduler*         _parentScheduler;
-    ucontext_t           _UFContext;
-    bool                 _UFObjectCreatedStack;
+    static unsigned int  DEFAULT_STACK_SIZE;
+    UFFact*              _myFactory;
+    void reset();
 
 private:
+    static UFId          _globalId;
+    UFScheduler*         _parentScheduler;
+    UFId                 _myId;
+    ucontext_t           _UFContext;
+    bool                 _UFObjectCreatedStack;
+    unsigned long long int _lastRun;
+
     void waitOnLock();
 };
+inline void UF::reset() 
+{
+    _startingArgs = 0;
+    _myFactory = 0; 
+    _parentScheduler = 0; 
+    _lastRun = 0; 
+    _status = NOT_STARTED; 
+}
 inline UFStatus UF::getStatus() const { return _status; }
+inline unsigned long long int UF::getLastRun() const { return _lastRun; }
+
+class UFFact
+{
+public:
+    virtual ~UFFact() {}
+    virtual UF* getUF();
+    virtual void releaseUF(UF* uf);
+
+protected:
+    virtual UF* createUF() = 0;
+    virtual void destroyUF(UF* uf) = 0;
+};
+inline UF* UFFact::getUF()
+{
+    UF* uf = createUF();
+    if(!uf)
+        return 0;
+    uf->reset();
+    uf->_myFactory = this;
+    return uf;
+}
+inline void UFFact::releaseUF(UF* uf)
+{
+    destroyUF(uf);
+}
 
 struct UFFactory
 {
     static UFFactory* getInstance();
     UFFactory();
 
-    UF* selectUF(unsigned int location);;
+    UF* selectUF(unsigned int location);
     int registerFunc(UF* uf);
 
 protected:
@@ -92,9 +136,9 @@ inline UFFactory* UFFactory::getInstance() { return (_instance ? _instance : (_i
 inline UF* UFFactory::selectUF(unsigned int location) { return _objMapping[location]; }
 
 struct UFWaitInfo;
-typedef std::list<UFWaitInfo*> UFWaitList;
-typedef map<UF*, UFWaitInfo*> UFWLHash;
-typedef std::list<UF*>          UFList;
+typedef std::map<UF*, UFWaitInfo*>  UFWLHash;
+typedef std::list<UF*>              UFList;
+typedef std::deque<UF*>             UFDeque;
 struct UFMutex
 {
     UFMutex() 
@@ -106,7 +150,7 @@ struct UFMutex
 
     bool lock(UF* uf);
     bool unlock(UF* uf);
-    bool tryLock(UF* uf, unsigned long long int autoRetryIntervalInUS = 0);
+    bool tryLock(UF* uf, TIME_IN_US autoRetryIntervalInUS = 0);
 
     //THE CALLER MUST get the lock before calling this fxn
     //THE CALLER MUST release the lock after this fxn is called
@@ -119,7 +163,7 @@ struct UFMutex
     void signal();
     //THE CALLER MUST get the lock before calling this fxn
     //THE CALLER MUST unlock the lock after calling this fxn (to maintain parity w/ pthread calling paradigms
-    int condTimedWait(UF *uf, unsigned long long int sleepAmtInUs);
+    bool condTimedWait(UF *uf, TIME_IN_US sleepAmtInUs);
 
     void releaseSpinLock(bool spinCPU = false);
     void getSpinLock(bool spinCPU = false);
@@ -127,7 +171,6 @@ struct UFMutex
 protected:
     int                 _lockActive;
     UFList              _listOfClientsWaitingOnLock;
-    //UFWaitList          _listOfClientsWaitingOnCond;
     UFWLHash            _listOfClientsWaitingOnCond;
     bool                _lockCurrentlyOwned;
     UF*                 _mustRunUF;
@@ -144,10 +187,10 @@ struct UFWaitInfo
 inline void UFWaitInfo::reset() { _uf = 0; _sleeping = false; _waiting = false; }
 
 
-typedef std::multimap<unsigned long long int, UFWaitInfo*> MapTimeUF;
+typedef std::multimap<TIME_IN_US, UFWaitInfo*> MapTimeUF;
 //typedef std::map<pthread_t,UFScheduler*> ThreadUFSchedulerMap;
 //per thread scheduler
-typedef hash_map<pthread_t, UFScheduler*, hash<uintptr_t> > ThreadUFSchedulerMap;
+typedef std::hash_map<pthread_t, UFScheduler*, std::hash<uintptr_t> > ThreadUFSchedulerMap;
 
 struct UFScheduler
 {
@@ -164,7 +207,7 @@ struct UFScheduler
     bool addFiberToScheduler(UF* uf,      /* the UF to add */
                              pthread_t tid = 0); /* the thread to add the UF to */
     //add the fxn to add multiple ufs in one shot (if they're on one tid)
-    bool addFiberToScheduler(const std::list<UF*>& ufList, 
+    bool addFiberToScheduler(const UFList& ufList, 
                               pthread_t tid = 0);
 
 
@@ -181,10 +224,10 @@ struct UFScheduler
     static bool                  _inThreadedMode;
 
     UF* getRunningFiberOnThisThread();
-    const ucontext_t& getMainContext() const;
+    ucontext_t* getMainContext();
     void setSpecific(void* args);
     void* getSpecific() const;
-    unsigned long long int getAmtToSleep() const;
+    TIME_IN_US getAmtToSleep() const;
     static void setExit(bool exit = true);
     bool shouldExit() const;
     void setExitJustMe(bool exit = true);
@@ -203,29 +246,31 @@ struct UFScheduler
     //to allow to identify the thread running now
     static pthread_key_t        _specific_key;
 
-    static void ufCreateThread(pthread_t* tid, std::list<UF*>* ufsToStartWith);
+    static void ufCreateThread(pthread_t* tid, UFList* ufsToStartWith);
 
     static bool                 _exit;
     bool                        _exitJustMe;
+    unsigned long long int      getRunCounter() const;
+
 protected:
+    unsigned long long int      _runCounter;
     UF*                         _currentFiber;
     ucontext_t                  _mainContext;
 
     //no lock for active running list - cause only the running
     //thread can add to it
-    UFList                      _activeRunningList;
-    size_t                      _activeRunningListSize;
+    UFDeque                     _activeRunningList;
 
     //nominate to add to a thread's running list
-    UFList                      _nominateToAddToActiveRunningList;
+    UFDeque                     _nominateToAddToActiveRunningList;
     pthread_mutex_t             _mutexToNominateToActiveList;
     pthread_cond_t              _condToNominateToActiveList;
     
     //the sleep tree
     MapTimeUF                   _sleepList;
-    unsigned long long int      _earliestWakeUpFromSleep;
+    TIME_IN_US                  _earliestWakeUpFromSleep;
     //store the shortest sleep interval
-    unsigned long long int      _amtToSleep;
+    TIME_IN_US                  _amtToSleep;
 
 
     //store thread specific content
@@ -234,20 +279,18 @@ protected:
 
     void notifyUF();
     
-    list<UFWaitInfo*>  _availableWaitInfo;
+    std::deque<UFWaitInfo*>     _availableWaitInfo;
     UFWaitInfo* getWaitInfo();
     void releaseWaitInfo(UFWaitInfo& ufsi);
     bool addFiberToSelf(UF* uf);
-    bool addFiberToAnotherThread(const std::list<UF*>& ufList, pthread_t tid);
-
-public:
-    UFMutex testingCondTimedWait;
+    bool addFiberToAnotherThread(const UFList& ufList, pthread_t tid);
 };
-inline size_t UFScheduler::getActiveRunningListSize() const { return _activeRunningListSize; }
+inline unsigned long long int UFScheduler::getRunCounter() const { return _runCounter; }
+inline size_t UFScheduler::getActiveRunningListSize() const { return _activeRunningList.size(); }
 inline bool UFScheduler::shouldExit() const { return (_exitJustMe || _exit) ? true : false; }
-inline unsigned long long int UFScheduler::getAmtToSleep() const { return _amtToSleep; }
+inline TIME_IN_US UFScheduler::getAmtToSleep() const { return _amtToSleep; }
 inline UF* UFScheduler::getRunningFiberOnThisThread(){ return _currentFiber; }
-inline const ucontext_t& UFScheduler::getMainContext() const { return _mainContext; };
+inline ucontext_t* UFScheduler::getMainContext() { return &_mainContext; }
 inline void UFScheduler::setSpecific(void* args) { _specific = args; }
 inline void* UFScheduler::getSpecific() const { return _specific; }
 inline void UFScheduler::setExit(bool exit) { _exit = exit; }
@@ -275,17 +318,17 @@ inline UFScheduler* UF::getParentScheduler() const { return _parentScheduler; }
 
 inline void UF::waitOnLock() { block(); }
 
-inline void UF::gusleep(unsigned long long int sleepAmtInUs)
+inline void UF::gusleep(TIME_IN_US sleepAmtInUs)
 {
     UFScheduler::getUFScheduler()->getRunningFiberOnThisThread()->usleep(sleepAmtInUs);
 }
 
-inline unsigned long long int timeInUS(timeval& t)
+inline TIME_IN_US timeInUS(timeval& t)
 {
-    return ((unsigned long long int)(((unsigned long long int) t.tv_sec)*1000000)+(unsigned long long int) t.tv_usec);
+    return ((TIME_IN_US)(((TIME_IN_US) t.tv_sec)*1000000)+(TIME_IN_US) t.tv_usec);
 }
 
-inline void UF::usleep(unsigned long long int sleepAmtInUs)
+inline void UF::usleep(TIME_IN_US sleepAmtInUs)
 {
     if(!sleepAmtInUs)
     {
@@ -296,7 +339,7 @@ inline void UF::usleep(unsigned long long int sleepAmtInUs)
     struct timeval now;
     gettimeofday(&now, 0);
     
-    unsigned long long int timeToWakeUp = timeInUS(now) + sleepAmtInUs;
+    TIME_IN_US timeToWakeUp = timeInUS(now) + sleepAmtInUs;
     if( _parentScheduler->_earliestWakeUpFromSleep > timeToWakeUp ||
        !_parentScheduler->_earliestWakeUpFromSleep)
         _parentScheduler->_earliestWakeUpFromSleep = timeToWakeUp;
@@ -318,7 +361,11 @@ inline void UF::block()
 inline void UF::yield()
 {
     //switch context back to the main scheduler
-    swapcontext(&_UFContext, &(_parentScheduler->getMainContext()));
+#if __WORDSIZE == 64
+    uf_swapcontext(&_UFContext, _parentScheduler->getMainContext());
+#else
+    swapcontext(&_UFContext, _parentScheduler->getMainContext());
+#endif
 }
 
 inline void UFMutex::releaseSpinLock(bool spinCPU)

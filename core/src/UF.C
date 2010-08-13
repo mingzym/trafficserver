@@ -1,5 +1,4 @@
-#include "UF.H"
-#include "UFConnectionPool.H"
+#include <UF.H>
 
 #include <string.h>
 #include <iostream>
@@ -10,7 +9,7 @@
 #include <stdio.h>
 #include <malloc.h>
 #include <sys/mman.h>
-#include "UFSwapContext.H"
+#include <UFSwapContext.H>
 
 using namespace std;
 
@@ -33,12 +32,13 @@ static void runFiber(void* args)
 
 ///////////////UF/////////////////////
 UFFactory* UFFactory::_instance = 0;
-const unsigned int DEFAULT_STACK_SIZE = 4*4096;
+unsigned int UF::DEFAULT_STACK_SIZE = 4*4096;
 UFId UF::_globalId = 0;
 
 UF::UF()
 { 
-    _startingArgs = 0;
+    reset();
+    _myId = ++_globalId;  //TODO: make atomic
     setup();
 }
 
@@ -59,17 +59,14 @@ bool UF::setup(void* stackPtr, size_t stackSize)
     }
 #endif
 
-    _myId = ++_globalId;  //TODO: make atomic
-    _status = NOT_STARTED;
-
     if(!stackPtr || !stackSize)
     {
 #ifndef DEBUG
-        _UFContext.uc_stack.ss_size = (stackSize) ? stackSize : DEFAULT_STACK_SIZE;
+        _UFContext.uc_stack.ss_size = (stackSize) ? stackSize : UF::DEFAULT_STACK_SIZE;
         _UFContext.uc_stack.ss_sp = (void*) malloc (_UFContext.uc_stack.ss_size);
 #else
-        _UFContext.uc_stack.ss_size = DEFAULT_STACK_SIZE;
-        _UFContext.uc_stack.ss_sp = (void*) memalign (pageSize, DEFAULT_STACK_SIZE);
+        _UFContext.uc_stack.ss_size = UF::DEFAULT_STACK_SIZE;
+        _UFContext.uc_stack.ss_sp = (void*) memalign (pageSize, UF::DEFAULT_STACK_SIZE);
         if(!_UFContext.uc_stack.ss_sp)
         {
             cerr<<"couldnt allocate space from memalign "<<strerror(errno)<<endl;
@@ -90,8 +87,6 @@ bool UF::setup(void* stackPtr, size_t stackSize)
         _UFObjectCreatedStack = false;
     }
     _UFContext.uc_stack.ss_flags = 0;
-
-    _parentScheduler = 0;
 
     return true;
 }
@@ -116,7 +111,6 @@ static pthread_key_t getThreadKey()
 pthread_key_t UFScheduler::_specific_key = getThreadKey();
 UFScheduler::UFScheduler()
 {
-    _activeRunningListSize = 0;
     _earliestWakeUpFromSleep = 0;
     _exitJustMe = false;
     _specific = 0;
@@ -161,25 +155,39 @@ UFScheduler::UFScheduler()
 
     pthread_setspecific(_specific_key, this);
     _amtToSleep = 0;
+    _runCounter = 1;
 }
 
-UFScheduler::~UFScheduler() { /*pthread_key_delete(_specific_key);*/ }
+UFScheduler::~UFScheduler() 
+{ 
+    //remove the UFScheduler associated w/ this thread
+    pthread_mutex_lock(&_mutexToCheckFiberSchedulerMap);
+    ThreadUFSchedulerMap::iterator index = _threadUFSchedulerMap.find(pthread_self());
+    if(index != _threadUFSchedulerMap.end())
+        _threadUFSchedulerMap.erase(index);
+    pthread_mutex_unlock(&_mutexToCheckFiberSchedulerMap);
+
+    /*pthread_key_delete(_specific_key);*/ 
+}
 
 bool UFScheduler::addFiberToSelf(UF* uf)
 {
-    if(uf->_status == WAITING_TO_RUN) //UF is already in the queue
+    if(!uf)
+        return false;
+    if(uf->_status == WAITING_TO_RUN || 
+       uf->_status == YIELDED) //UF is already in the queue
         return true;
     uf->_status = WAITING_TO_RUN;
-    if(uf->_parentScheduler) //probably putting back an existing uf into the active list
+    if(uf->getParentScheduler()) //probably putting back an existing uf into the active list
     {
-        if(uf->_parentScheduler == this) //check that we're scheduling for the same thread
+        if(uf->getParentScheduler() == this) //check that we're scheduling for the same thread
         {
-            _activeRunningList.push_back(uf); ++_activeRunningListSize;
+            _activeRunningList.push_front(uf);
             return true;
         }
         else
         {
-            cerr<<uf<<" uf is not part of scheduler, "<<this<<" its part of "<<uf->_parentScheduler<<endl;
+            cerr<<uf<<" uf is not part of scheduler, "<<this<<" its part of "<<uf->getParentScheduler()<<endl;
             abort(); //TODO: remove the abort
             return false;
         }
@@ -202,12 +210,15 @@ bool UFScheduler::addFiberToSelf(UF* uf)
         cerr<<"error while trying to run makecontext"<<endl;
         return false;
     }
-    _activeRunningList.push_back(uf); ++_activeRunningListSize;
+    _activeRunningList.push_front(uf);
     return true;
 }
 
 bool UFScheduler::addFiberToAnotherThread(const list<UF*>& ufList, pthread_t tid)
 {
+    if(ufList.empty())
+        return false;
+
     //find the other thread -- 
     //TODO: have to lock before looking at this map - 
     //since it could be changed if more threads are added later - not possible in the test that is being run (since the threads are created before hand)
@@ -260,15 +271,13 @@ bool UFScheduler::addFiberToScheduler(const list<UF*>& ufList, pthread_t tid)
         return true;
 
     //adding to the same scheduler and as a result thread as the current job
-    UF* uf = 0;
-    list<UF*>::const_iterator beg = ufList.begin();
-    list<UF*>::const_iterator ending = ufList.end();
     if(!tid || (tid == pthread_self()))
     {
+        list<UF*>::const_iterator beg = ufList.begin();
+        list<UF*>::const_iterator ending = ufList.end();
         for(; beg != ending; ++beg)
         {
-            uf = *beg;
-            if(addFiberToSelf(uf))
+            if(addFiberToSelf(*beg))
                 continue;
             else
                 return false;
@@ -295,23 +304,31 @@ void UFScheduler::runScheduler()
     _amtToSleep = DEFAULT_SLEEP_IN_USEC;
     bool ranGetTimeOfDay = false;
 
-    UFList::iterator beg;
     struct timeval now;
     struct timeval start,finish;
     gettimeofday(&start, 0);
-    unsigned long long int timeNow = 0;
+    TIME_IN_US timeNow = 0;
 
-    UFList::iterator ufBeg;
-    UFList::iterator nBeg;
     MapTimeUF::iterator slBeg;
     bool waiting = false;
+    //unsigned long long int runCounter = 1;
     while(!shouldExit())
     {
-        for(ufBeg = _activeRunningList.begin(); ufBeg != _activeRunningList.end(); )
+        ++_runCounter;
+        while(!_activeRunningList.empty())
         {
-            UF* uf = *ufBeg;
-            _currentFiber = uf;
+            if(shouldExit())
+                break;
+
+            UF* uf = _activeRunningList.front();
+            if(uf->_status == YIELDED &&
+               uf->_lastRun == _runCounter) //we have looped back
+                break;
+            //printf("%lu - running uf %lu on iter %llu\n", pthread_self(), (uintptr_t)uf, _runCounter);
+            _activeRunningList.pop_front();
+            uf->_lastRun = _runCounter;
             uf->_status = RUNNING;
+            _currentFiber = uf;
 #if __WORDSIZE == 64
             uf_swapcontext(&_mainContext, &(uf->_UFContext));
 #else
@@ -320,20 +337,18 @@ void UFScheduler::runScheduler()
             _currentFiber = 0;
 
             if(uf->_status == BLOCKED)
-            {
-                ufBeg = _activeRunningList.erase(ufBeg); --_activeRunningListSize;
                 continue;
-            }
             else if(uf->_status == COMPLETED) 
             {
-                delete uf;
-                ufBeg = _activeRunningList.erase(ufBeg); --_activeRunningListSize;
+                if(uf->_myFactory)
+                    uf->_myFactory->releaseUF(uf);
+                else
+                    delete uf;
                 continue;
             }
-
             //else uf->_status == RUNNING
-            uf->_status = WAITING_TO_RUN;
-            ++ufBeg;
+            uf->_status = YIELDED;
+            _activeRunningList.push_back(uf);
         }
 
 
@@ -354,20 +369,18 @@ void UFScheduler::runScheduler()
             //TODO: do atomic comparison to see if there is anything in 
             //_nominateToAddToActiveRunningList before getting the lock
             pthread_mutex_lock(&_mutexToNominateToActiveList);
-            for(nBeg = _nominateToAddToActiveRunningList.begin();
-                nBeg != _nominateToAddToActiveRunningList.end(); )
+            do
             {
-                UF* uf = *nBeg;
-                if(uf->_parentScheduler)
+                UF* uf = _nominateToAddToActiveRunningList.front();
+                if(uf->getParentScheduler())
                 {
                     uf->_status = WAITING_TO_RUN;
-                    _activeRunningList.push_front(uf); ++_activeRunningListSize;
+                    _activeRunningList.push_front(uf);
                 }
                 else //adding a new fiber
                     addFiberToScheduler(uf, 0);
-                nBeg = _nominateToAddToActiveRunningList.erase(nBeg);
-            }
-
+                _nominateToAddToActiveRunningList.pop_front();
+            }while(!_nominateToAddToActiveRunningList.empty());
             pthread_mutex_unlock(&_mutexToNominateToActiveList);
         }
 
@@ -393,7 +406,7 @@ void UFScheduler::runScheduler()
                         if(ufwi->_uf)
                         {
                             ufwi->_uf->_status = WAITING_TO_RUN;
-                            _activeRunningList.push_front(ufwi->_uf); ++_activeRunningListSize;
+                            _activeRunningList.push_front(ufwi->_uf);
                             ufwi->_uf = NULL;
                         }
                         waiting = ufwi->_waiting;
@@ -419,13 +432,13 @@ void UFScheduler::runScheduler()
         }
 
         //see if there is anything to do or is it just sleeping time now
-        if(!_notifyFunc && !_activeRunningListSize && !shouldExit())
+        if(!_notifyFunc && _activeRunningList.empty() && !shouldExit())
         {
             if(_inThreadedMode) //go to conditional wait (in threaded mode)
             {
                 struct timespec ts;
-                unsigned long long int nSecToIncrement = (int)(_amtToSleep/1000000);
-                unsigned long long int nUSecToIncrement = (int)(_amtToSleep%1000000);
+                int nSecToIncrement = (int)(_amtToSleep/1000000);
+                TIME_IN_US nUSecToIncrement = (TIME_IN_US)(_amtToSleep%1000000);
                 if(!ranGetTimeOfDay)
                     gettimeofday(&now, 0);
                 ts.tv_sec = now.tv_sec + nSecToIncrement;
@@ -442,7 +455,7 @@ void UFScheduler::runScheduler()
     }
     gettimeofday(&finish, 0);
 
-    unsigned long long int diff = (finish.tv_sec-start.tv_sec)*1000000 + (finish.tv_usec - start.tv_usec);
+    TIME_IN_US diff = (finish.tv_sec-start.tv_sec)*1000000 + (finish.tv_usec - start.tv_usec);
     cerr<<pthread_self()<<" time taken in this thread = "<<diff<<"us"<<endl;
 }
 
@@ -498,10 +511,10 @@ int UFFactory::registerFunc(UF* uf)
     return _size++;
 }
 
-const unsigned int CONSECUTIVE_LOCK_FAILURES_ALLOWED = 3;
+const unsigned int CONSECUTIVE_LOCK_FAILURES_ALLOWED = 15;
 bool UFMutex::lock(UF* uf)
 {
-    if(!uf || !uf->_parentScheduler)
+    if(!uf || !uf->getParentScheduler())
         return false;
 
     getSpinLock();
@@ -575,38 +588,28 @@ bool UFMutex::unlock(UF* uf)
     if(!uf)
         return false;
 
-    UFList::iterator beg;
     getSpinLock();
 
-    beg = _listOfClientsWaitingOnLock.begin();
-    if(uf == *beg) //check if this uf is the current owner of this lock
+    if(uf == _listOfClientsWaitingOnLock.front()) //check if this uf is the current owner of this lock
     {
+        _listOfClientsWaitingOnLock.pop_front();
         _lockCurrentlyOwned = false;
-        beg = _listOfClientsWaitingOnLock.erase(beg);
 #ifdef LOCK_DEBUG
         printf("%lu u %d\n", (unsigned long int) ((uintptr_t)(void*)uf), _listOfClientsWaitingOnLock.size());
 #endif
 
-        bool releasedLock = false;
         //notify the next UF in line
         while(!_listOfClientsWaitingOnLock.empty())
         {
-            UF* tmpUf = *beg;
-            if(!tmpUf || !tmpUf->_parentScheduler) //invalid tmpuf - cant wake it up
+            UF* tmpUf = _listOfClientsWaitingOnLock.front();
+            if(!tmpUf || !tmpUf->getParentScheduler()) //invalid tmpuf - cant wake it up
             {
 #ifdef LOCK_DEBUG
                 printf("%lu nf1\n", (unsigned long int) ((uintptr_t)(void*)uf));
 #endif
-                beg = _listOfClientsWaitingOnLock.erase(beg);
-                if(beg == _listOfClientsWaitingOnLock.end())
-                    break;
+                _listOfClientsWaitingOnLock.pop_front();
                 continue;
             }
-            /*
-            if(tmpUf->getStatus() == WAITING_TO_RUN) //this uf has already been put into the waiting to run list
-                break;
-                */
-
 
 #ifdef LOCK_DEBUG
             printf("%lu wk %lu\n", 
@@ -615,14 +618,11 @@ bool UFMutex::unlock(UF* uf)
 #endif
 
             releaseSpinLock();
-            releasedLock = true;
-            uf->_parentScheduler->addFiberToScheduler(tmpUf, tmpUf->_parentScheduler->_tid);
-            break;
+            uf->getParentScheduler()->addFiberToScheduler(tmpUf, tmpUf->_parentScheduler->_tid);
+            return true;
         }
 
-        if(!releasedLock)
-            releaseSpinLock();
-
+        releaseSpinLock();
         return true;
     }
     else
@@ -635,7 +635,7 @@ bool UFMutex::unlock(UF* uf)
     return false;
 }
 
-bool UFMutex::tryLock(UF* uf, unsigned long long int autoRetryIntervalInUS)
+bool UFMutex::tryLock(UF* uf, TIME_IN_US autoRetryIntervalInUS)
 {
     while(1)
     {
@@ -668,7 +668,7 @@ bool UFMutex::condWait(UF* uf)
     //the object is already in the hash
     if(_listOfClientsWaitingOnCond.find(uf) == _listOfClientsWaitingOnCond.end())
     {
-        UFWaitInfo *ufwi = uf->_parentScheduler->getWaitInfo();
+        UFWaitInfo *ufwi = uf->getParentScheduler()->getWaitInfo();
         ufwi->_uf = uf;
         ufwi->_waiting = true;
     
@@ -708,7 +708,7 @@ void UFMutex::broadcast()
         // If uf is not NULL, schedule it and make sure no one else can schedule it again
         if(ufwi->_uf) 
         {
-            ufs->addFiberToScheduler(ufwi->_uf, ufwi->_uf->_parentScheduler->_tid);
+            ufs->addFiberToScheduler(ufwi->_uf, ufwi->_uf->getParentScheduler()->_tid);
             ufwi->_uf = NULL;
         }
         
@@ -760,10 +760,10 @@ void UFMutex::signal()
     }
 
     if(uf_to_signal)
-        ufs->addFiberToScheduler(uf_to_signal, uf_to_signal->_parentScheduler->_tid);
+        ufs->addFiberToScheduler(uf_to_signal, uf_to_signal->getParentScheduler()->_tid);
 }
 
-int UFMutex::condTimedWait(UF* uf, unsigned long long int sleepAmtInUs)
+bool UFMutex::condTimedWait(UF* uf, TIME_IN_US sleepAmtInUs)
 {
     bool result = false;
     if(!uf)
@@ -783,9 +783,9 @@ int UFMutex::condTimedWait(UF* uf, unsigned long long int sleepAmtInUs)
     // Add to sleep queue
     struct timeval now;
     gettimeofday(&now, 0);
-    unsigned long long int timeNow = timeInUS(now);
+    TIME_IN_US timeNow = timeInUS(now);
     ufwi->_sleeping = true;
-    uf->_parentScheduler->_sleepList.insert(std::make_pair((timeNow+sleepAmtInUs), ufwi));
+    uf->getParentScheduler()->_sleepList.insert(std::make_pair((timeNow+sleepAmtInUs), ufwi));
     
     uf->waitOnLock(); //this fxn will cause the fxn to wait till a signal, broadcast or timeout has occurred
 
@@ -802,11 +802,11 @@ void* setupThread(void* args)
     if(!args)
         return 0;
 
-    list<UF*>* ufsToStartWith = (list<UF*>*) args;
+    UFList* ufsToStartWith = (UFList*) args;
     UFScheduler ufs;
     ufs.addFiberToScheduler(*ufsToStartWith, 0);
     delete ufsToStartWith;
-
+    
     //run the scheduler
     ufs.runScheduler();
 
@@ -819,10 +819,24 @@ void UFScheduler::ufCreateThread(pthread_t* tid, list<UF*>* ufsToStartWith)
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
-
+    
     if(pthread_create(tid, &attr, setupThread, (void*)ufsToStartWith) != 0)
     {
         cerr<<"couldnt create thread "<<strerror(errno)<<endl;
         exit(1);
     }
+}
+
+string getPrintableTime()
+{
+    char asctimeDate[32];
+    asctimeDate[0] = '\0';
+    time_t now = time(0);
+    asctime_r(localtime(&now), asctimeDate);
+
+    string response = asctimeDate;
+    size_t loc = response.find('\n');
+    if(loc != string::npos)
+        response.replace(loc, 1, "");
+    return response;
 }

@@ -1,7 +1,9 @@
-#include "UFConnectionPool.H"
+#include <UFConnectionPool.H>
 #include "UFConnectionPoolImpl.H"
+#include <UFStatSystem.H>
+#include <UFStats.H>
 
-#include "UFIO.H"
+#include <UFIO.H>
 #include <stdlib.h>
 #include <fstream>
 #include <iostream>
@@ -18,7 +20,7 @@
 #include <string.h>
 
 #ifdef USE_CARES
-#include "UFAres.H"
+#include <UFAres.H>
 #endif
 
 const unsigned short int PERCENT_LOGGING_SAMPLING = 5;
@@ -26,11 +28,11 @@ const unsigned short int PERCENT_LOGGING_SAMPLING = 5;
 using namespace std;
 
 UFConnIPInfo::UFConnIPInfo(const string& ip, 
-                                       unsigned int port,
-                                       bool persistent, 
-                                       int maxSimultaneousConns, 
-                                       TIME_IN_US connectTimeout,
-                                       TIME_IN_US timeToFailOutIPAfterFailureInSecs)
+                           unsigned int port,
+                           bool persistent, 
+                           int maxSimultaneousConns, 
+                           TIME_IN_US connectTimeout,
+                           TIME_IN_US timeToFailOutIPAfterFailureInSecs)
 {
     _ip = ip;
     _port = port;
@@ -40,7 +42,6 @@ UFConnIPInfo::UFConnIPInfo(const string& ip,
     _connectTimeout = connectTimeout;
     _timedOut = 0;
     _inProcessCount = 0;
-    _timeToExpireDNSInfo = 0;
 
     memset(&_sin, 0, sizeof(_sin));
     _sin.sin_family = AF_INET;
@@ -119,24 +120,30 @@ UFConnGroupInfo* UFConnectionPoolImpl::addGroupImplicit(const std::string& group
     return group;
 }
 
-bool UFConnectionPoolImpl::createIPInfo(const string& groupName, UFConnGroupInfo* groupInfo)
+const unsigned int DEFAULT_TTL = 300;
+bool UFConnectionPoolImpl::createIPInfo(const string& groupName, UFConnGroupInfo* groupInfo, TIME_IN_US connectTimeout)
 {
     UFConnIPInfoList& ipInfoList = groupInfo->getIpInfoList();
 
     size_t indexOfColon = groupName.find(':');
     string hostName = groupName;
     unsigned int port = 0;
+    string portString = "";
     if(indexOfColon != string::npos)
     {
         hostName = groupName.substr(0, indexOfColon);
-        port = atoi(groupName.substr(indexOfColon+1).c_str());
+        portString = groupName.substr(indexOfColon+1).c_str();
+        port = atoi(portString.c_str());
     }
+    else
+        return false;
 
     //have to figure out the hosts listed w/ 
     //
     int lowestTTL = 0;
     UFConnIPInfo* ipInfo = 0;
     string ipString;
+    string ipStringToInsert;
 
 #ifdef USE_CARES
     UFAres ufares;
@@ -150,8 +157,10 @@ bool UFConnectionPoolImpl::createIPInfo(const string& groupName, UFConnGroupInfo
     {
         ipString = inet_ntoa(results[i].ipaddr);
 #else
-    struct hostent* h = gethostbyname(hostName.c_str());
-    if(!h)
+    struct hostent hostInfo, *h;
+    int hErrno = 0;
+    char tmpHostBuf[1024];
+    if(gethostbyname_r (hostName.c_str(), &hostInfo, tmpHostBuf, 1024, &h, &hErrno) || hErrno)
         return false;
 
     for(unsigned int i = 0; 1; i++)
@@ -160,13 +169,14 @@ bool UFConnectionPoolImpl::createIPInfo(const string& groupName, UFConnGroupInfo
             break;
         ipString = inet_ntoa(*((in_addr*)h->h_addr_list[i]));
 #endif
+        ipStringToInsert = ipString + ":" + portString;
         //check if the ip already exists in the system
-        IPInfoStore::iterator index = _ipInfoStore.find(ipString);
+        IPInfoStore::iterator index = _ipInfoStore.find(ipStringToInsert);
         if(index == _ipInfoStore.end())
         {
-            ipInfo = new UFConnIPInfo(ipString, port, true, 0, 0, 30);
-            _ipInfoStore[ipString] = ipInfo;
-            index = _ipInfoStore.find(ipString);
+            ipInfo = new UFConnIPInfo(ipString, port, true, 0, connectTimeout, 30);
+            _ipInfoStore[ipStringToInsert] = ipInfo;
+            index = _ipInfoStore.find(ipStringToInsert);
         }
         ipInfo = index->second;
 
@@ -174,9 +184,9 @@ bool UFConnectionPoolImpl::createIPInfo(const string& groupName, UFConnGroupInfo
         if(lowestTTL > results[i].ttl || !lowestTTL)
             lowestTTL = results[i].ttl;
 #else
-        lowestTTL = 300; //default to 60 secs
+        lowestTTL = DEFAULT_TTL;
 #endif
-        ipInfoList.push_back(ipString);
+        ipInfoList.push_back(ipStringToInsert);
     }
 
     time_t timeToExpireAt = lowestTTL + time(0);
@@ -187,7 +197,7 @@ bool UFConnectionPoolImpl::createIPInfo(const string& groupName, UFConnGroupInfo
 }
 
 //TODO: return a ResultStructure which includes the UFConnIPInfo* along w/ the UFIO* so that the map doesnt have to be looked up on every return back of the structure
-UFIO* UFConnectionPoolImpl::getConnection(const std::string& groupName, bool waitForConnection)
+UFIO* UFConnectionPoolImpl::getConnection(const std::string& groupName, bool waitForConnection, TIME_IN_US connectTimeout)
 {
     if(!groupName.length())
         return 0;
@@ -209,12 +219,12 @@ UFIO* UFConnectionPoolImpl::getConnection(const std::string& groupName, bool wai
         if(!ipInfoList.empty()) //clear the existing set since the ttl expired
             ipInfoList.clear();
 
-        if(!createIPInfo(groupName, groupInfo))
+        if(!createIPInfo(groupName, groupInfo, connectTimeout))
             return 0;
     }
 
 
-    map<unsigned int,unsigned int> alreadySeenIPList; //this list will keep track of the ips that we've already seen
+    set<unsigned int> alreadySeenIPList; //this list will keep track of the ips that we've already seen
     unsigned int groupIpSize = ipInfoList.size();
     while(alreadySeenIPList.size() < groupIpSize) //bail out if we've seen all the ips already
     {
@@ -229,7 +239,7 @@ UFIO* UFConnectionPoolImpl::getConnection(const std::string& groupName, bool wai
             if(ipInfo && !ipInfo->_currentlyAvailableConnections.empty())
             {
                 elementNum = i;
-                alreadySeenIPList[elementNum] = 1;
+                alreadySeenIPList.insert(elementNum);
                 break;
             }
         }
@@ -240,7 +250,7 @@ UFIO* UFConnectionPoolImpl::getConnection(const std::string& groupName, bool wai
             elementNum = random() % groupIpSize;
             if(alreadySeenIPList.find(elementNum) != alreadySeenIPList.end()) //already seen this IP
                 continue;
-            alreadySeenIPList[elementNum] = 1;
+            alreadySeenIPList.insert(elementNum);
         }
 
         UFConnIPInfo* ipInfo = getIPInfo(ipInfoList[elementNum]);
@@ -261,8 +271,24 @@ UFConnIPInfo* UFConnectionPoolImpl::getIPInfo(const std::string& name)
     return ((index != _ipInfoStore.end()) ? index->second : 0);
 }
 
+uint32_t statConnFromPoolLocation = 0;
+uint32_t statConnFromNewConnLocation = 0;
+uint32_t statConnMarkedInvalid = 0;
+static bool registerConnPoolStats()
+{
+    UFStatSystem::registerStat("connPool.conn_from_pool", &statConnFromPoolLocation);
+    UFStatSystem::registerStat("connPool.conn_from_new_connection", &statConnFromNewConnLocation);
+    UFStatSystem::registerStat("connPool.conn_marked_invalid", &statConnMarkedInvalid);
+
+    return true;
+}
+
 UFIO* UFConnIPInfo::getConnection(UFConnIPInfoMap& _ufConnIPInfoMap)
 {
+    static bool statsRegistered = false;
+    if(!statsRegistered)
+        statsRegistered = registerConnPoolStats();
+
     //2. while the host is timedout - pick another one (put into the list of already seen ips)
     time_t currTime = time(0);
     _lastUsed = currTime;
@@ -276,28 +302,28 @@ UFIO* UFConnIPInfo::getConnection(UFConnIPInfoMap& _ufConnIPInfoMap)
         if(!_currentlyAvailableConnections.empty())
         {
             //3. pick a connection from the currently available conns
-            UFIOIntMap::iterator beg = _currentlyAvailableConnections.begin();
-            for(; beg != _currentlyAvailableConnections.end(); 
-                beg = _currentlyAvailableConnections.begin()  // we're resetting to the beginning to avoid
-                    // the case of two threads ending up getting 
-                    // the same connection
-                )
+            for(UFIOIntMap::iterator beg = _currentlyAvailableConnections.begin();
+                beg != _currentlyAvailableConnections.end(); )
             {
-                returnConn = beg->first;
-                _currentlyAvailableConnections.erase(beg);
+                returnConn = beg->second;
+                _currentlyAvailableConnections.erase(beg++);
                 if(!returnConn)
                 {
                     cerr<<time(0)<<" "<<__LINE__<<" "<<"found null conn - removing that from currentlyAvailable"<<endl;
                     continue;
                 }
 
+
                 if(returnConn->_markedActive) //this indicates that the conn. had some activity while sleeping - thats no good
                 {
+                    UFStatSystem::increment(statConnMarkedInvalid, 1);
                     UFConnIPInfoMap::iterator index = _ufConnIPInfoMap.find(returnConn);
                     _ufConnIPInfoMap.erase(index);
                     delete returnConn;
                     continue;
                 }
+
+                UFStatSystem::increment(statConnFromPoolLocation, 1);
                 returnConn->_active = true;
                 _currentlyUsedCount++;
                 return returnConn;
@@ -324,6 +350,7 @@ UFIO* UFConnIPInfo::getConnection(UFConnIPInfoMap& _ufConnIPInfoMap)
                 incInProcessCount(-1);
                 if(returnConn)
                 {
+                    UFStatSystem::increment(statConnFromNewConnLocation, 1);
                     _currentlyUsedCount++;
                     _ufConnIPInfoMap[returnConn] = this;
                 }
@@ -385,38 +412,36 @@ void UFConnectionPoolImpl::clearUnusedConnections(TIME_IN_US lastUsedTimeDiff, u
             continue;
         }
 
+        //TODO: order _currentlyAvailableConnections by time
         //walk the available connection list to see if any conn. hasnt been used for a while
-        UFIOIntMap::iterator conBeg = ipInfo->_currentlyAvailableConnections.begin();
-        for(; conBeg != ipInfo->_currentlyAvailableConnections.end(); )
+        for(UFIOIntMap::iterator conBeg = ipInfo->_currentlyAvailableConnections.begin();
+            conBeg != ipInfo->_currentlyAvailableConnections.end(); )
         {
-            UFIO* conn = conBeg->first;
-            if(!conn) //TODO
+            UFIO* conn = conBeg->second;
+            if(!conn)
             {
                 ipInfo->_currentlyAvailableConnections.erase(conBeg++);
                 continue;
             }
+            
+            time_t connLastUsed = conBeg->first;
+            if(((int)connLastUsed + (int)lastUsedTimeDiff) > (int)currTime) //the time hasnt expired yet
+                break;
 
-            if((int)(conBeg->second + lastUsedTimeDiff) < (int)currTime /*the conn. has expired*/ ||
-               (conBeg->first->_markedActive)/*somehow this conn. had some update*/)
-            {
-                //remove the conn from the _UFConnIPInfoMap list
-                UFConnIPInfoMap::iterator index = _ufConnIPInfoMap.find(conBeg->first);
-                if(index != _ufConnIPInfoMap.end())
-                    _ufConnIPInfoMap.erase(index);
-                delete conBeg->first; //delete the connection
-                ipInfo->_currentlyAvailableConnections.erase(conBeg++);
-                continue;
-            }
-            ++conBeg;
+            //remove the conn from the _UFConnIPInfoMap list
+            UFConnIPInfoMap::iterator index = _ufConnIPInfoMap.find(conn);
+            if(index != _ufConnIPInfoMap.end())
+                _ufConnIPInfoMap.erase(index);
+            delete conn; //delete the connection
+            ipInfo->_currentlyAvailableConnections.erase(conBeg++);
         }
-        if(ipInfo->_currentlyAvailableConnections.empty())
+
+        //check the last time this ipinfo was ever used - if its > than 600s remove it
+        if(ipInfo->_currentlyAvailableConnections.empty() &&
+           (ipInfo->getLastUsed() + DEFAULT_LAST_USED_TIME_INTERVAL_FOR_IP < (unsigned int) currTime))
         {
-            //check the last time this ipinfo was ever used - if its > than 300s remove it
-            if(ipInfo->getLastUsed() + DEFAULT_LAST_USED_TIME_INTERVAL_FOR_IP < (unsigned int) currTime)
-            {
-                _ipInfoStore.erase(beg++);
-                continue;
-            }
+            _ipInfoStore.erase(beg++);
+            continue;
         }
         ++beg;
     }
@@ -444,8 +469,7 @@ void UFConnectionPoolImpl::releaseConnection(UFIO* ufIO, bool connOk)
     //add to the available list
     if(connOk && ipInfo->getPersistent())
     {
-        time_t currTime = time(0);
-        ipInfo->_currentlyAvailableConnections[ufIO] = currTime;
+        ipInfo->_currentlyAvailableConnections.insert(make_pair(time(0), ufIO));
         ufIO->_markedActive = false;
         ufIO->_active = false;
     }
@@ -457,17 +481,21 @@ void UFConnectionPoolImpl::releaseConnection(UFIO* ufIO, bool connOk)
     }
 
     //signal to all the waiting threads that there might be a connection available
+    /*TODO: lock only if we move the conn. pool to support running on multiple threads
     UF* this_user_fiber = UFScheduler::getUFScheduler()->getRunningFiberOnThisThread();
     ipInfo->getMutexToCheckSomeConnection()->lock(this_user_fiber);
+    */
     ipInfo->getMutexToCheckSomeConnection()->broadcast();
+    /*
     ipInfo->getMutexToCheckSomeConnection()->unlock(this_user_fiber);
+    */
 }
 
 UFConnectionPoolImpl::~UFConnectionPoolImpl() 
 { 
 }
 
-const unsigned int DEFAULT_COVER_LIST_TIME_IN_US = 60*1000*1000;
+const unsigned int DEFAULT_COVER_LIST_TIME_IN_US = 240*1000*1000;
 void UFConnectionPoolCleaner::run()
 {
     UF* this_uf = UFScheduler::getUFScheduler()->getRunningFiberOnThisThread();
@@ -521,9 +549,9 @@ bool UFConnectionPool::addGroup(UFConnGroupInfo* groupInfo)
     return (_impl ? _impl->addGroup(groupInfo) : false);
 }
 
-UFIO* UFConnectionPool::getConnection(const std::string& groupName, bool waitForConnection)
+UFIO* UFConnectionPool::getConnection(const std::string& groupName, bool waitForConnection, TIME_IN_US connectTimeout)
 {
-    return (_impl ? _impl->getConnection(groupName, waitForConnection) : 0);
+    return (_impl ? _impl->getConnection(groupName, waitForConnection, connectTimeout) : 0);
 }
 
 void UFConnectionPool::releaseConnection(UFIO* ufIO, bool connOk)
@@ -549,7 +577,7 @@ void UFConnectionPool::clearUnusedConnections(TIME_IN_US lastUsedTimeDiff, unsig
 
 TIME_IN_US UFConnectionPool::getTimeToTimeoutIPAfterFailure()
 {
-    return (_impl ? _impl->getTimeToTimeoutIPAfterFailure() : 0);
+    return (_impl ? _impl->getTimeToTimeoutIPAfterFailure() : -1);
 }
 
 void UFConnectionPool::setMaxSimulConnsPerHost(int input)

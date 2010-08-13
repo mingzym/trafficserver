@@ -21,14 +21,15 @@
 #include <string>
 #include <stdio.h>
 
-#include "UF.H"
-#include "UFIO.H"
-#include "UFServer.H"
-#include "UFConnectionPool.H"
+#include <ufcore/UF.H>
+#include <ufcore/UFIO.H>
+#include <ufcore/UFServer.H>
+#include <ufcore/UFConnectionPool.H>
 #include <vector>
 
 using namespace std;
 
+unsigned int NUM_REQUESTS_TO_RUN                        = 0;
 unsigned short int NUM_THREADS                          = 1;
 unsigned int NUM_USER_FIBERS_ALLOWED_TO_RUN             = 1;
 unsigned int NUM_CONNECTIONS_PER_FIBER                  = 1;
@@ -79,10 +80,10 @@ ResponseInfoObject overallInfo;
 pthread_mutex_t overallInfoTrackMutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_key_t threadUpdateOverallInfo;
 
-int GET_RESPONSE_TIMEOUT = 1*1000*1000;
+TIME_IN_US GET_RESPONSE_TIMEOUT = -1;
 string DOUBLE_NEWLINE = "\r\n\r\n";
 unsigned int DOUBLE_NEWLINE_LENGTH = DOUBLE_NEWLINE.length();
-bool readData(UFIO* ufio, unsigned int timeout, bool& connClosed)
+bool readData(UFIO* ufio, bool& connClosed)
 {
     string result;
     char buf[4096];
@@ -92,7 +93,7 @@ bool readData(UFIO* ufio, unsigned int timeout, bool& connClosed)
     bool okToExitToEnd = false;
     while(1)
     {
-        int num_bytes_read = ufio->read(buf, 4095, 0);
+        int num_bytes_read = ufio->read(buf, 4095, GET_RESPONSE_TIMEOUT);
         if(num_bytes_read <= 0)
         {
             if(okToExitToEnd && (num_bytes_read == 0))
@@ -101,8 +102,13 @@ bool readData(UFIO* ufio, unsigned int timeout, bool& connClosed)
                 connClosed = true;
                 return true;
             }
+            cerr<<"bytes read = "<<num_bytes_read<<" with errno = "<<strerror(ufio->getErrno())<<endl;
             return false;
         }
+        /*
+        else
+            cerr<<"read"<<string(buf, num_bytes_read)<<endl;
+            */
         result.append(buf, num_bytes_read);
 
 
@@ -147,6 +153,7 @@ bool readData(UFIO* ufio, unsigned int timeout, bool& connClosed)
            (result.length() > (endOfHeaders + DOUBLE_NEWLINE_LENGTH + contentLength))) //dont support pipelining yet
         {
             cerr<<"read more than supposed to"<<endl;
+            cerr<<"read "<<result;
             return false;
         }
         else if(result.length() == endOfHeaders + DOUBLE_NEWLINE_LENGTH + contentLength)
@@ -158,10 +165,12 @@ bool readData(UFIO* ufio, unsigned int timeout, bool& connClosed)
 
 
 unsigned int SLEEP_BETWEEN_CONN_SETUP = 0;
-int CONNECT_AND_REQUEST_TIMEOUT = 1*1000*1000;
+TIME_IN_US CONNECT_AND_REQUEST_TIMEOUT = -1;
 bool writeData(UFIO* ufio, const string& data)
 {
     int amt_written = ufio->write(data.data(), data.length(), CONNECT_AND_REQUEST_TIMEOUT);
+    if(amt_written <= 0)
+        cerr<<"write failed "<<ufio->getErrno()<<endl;
     return ((amt_written == (int)data.length()) ? true : false);
 }
 
@@ -175,7 +184,7 @@ UFIO* getConn(ResponseInfoObject* rIO)
 
     struct timeval start,finish;
     gettimeofday(&start, 0);
-    UFIO* ufio = cpool->getConnection(remote_addr);
+    UFIO* ufio = cpool->getConnection(remote_addr, true, CONNECT_AND_REQUEST_TIMEOUT);
     if(!ufio)
     {
         if(random()%100 < 10)
@@ -221,7 +230,7 @@ void run_handler()
         return;
 
     //do the requests
-    unsigned short int num_requests_run = 0;
+    unsigned int num_requests_run = 0;
     while(num_requests_run++ < NUM_REQUESTS_PER_FIBER)
     {
         if(INTER_SEND_SLEEP)
@@ -258,7 +267,7 @@ void run_handler()
 
 
         bool connClosed = false;
-        if(!readData(ufio, CONNECT_AND_REQUEST_TIMEOUT, connClosed))
+        if(!readData(ufio, connClosed))
         {
             if(random()%100 < 10)
                 cerr<<"bailing since read data failed "<<strerror(errno)<<endl;
@@ -300,7 +309,7 @@ void ClientUF::run()
     ResponseInfoObject* rIO = (ResponseInfoObject*)pthread_getspecific(threadUpdateOverallInfo);
     if(!rIO)
         return;
-    unsigned short int num_requests_run = 0;
+    unsigned int num_requests_run = 0;
     while(num_requests_run++ < NUM_CONNECTIONS_PER_FIBER)
     {
         //wait if told to do so
@@ -405,16 +414,13 @@ void SetupClientUF::run()
         {
             if(!rIO.num_user_fibers_running)
                 break;
-            else if ((THREAD_COMPLETION_PERCENT_TO_BAIL_ON < 100) && 
-                     (rIO.num_user_fibers_running*100/NUM_USER_FIBERS_ALLOWED_TO_RUN <= THREAD_COMPLETION_PERCENT_TO_BAIL_ON)
-                )
-            {
-                cerr<<"bailing due to "<<"num_user_fibers_running = "<<rIO.num_user_fibers_running<<" and div = "<<(rIO.num_user_fibers_running*100/NUM_USER_FIBERS_ALLOWED_TO_RUN)<<" and amt to bail on = "<<THREAD_COMPLETION_PERCENT_TO_BAIL_ON<<endl;
-                break;
-            }
 
             UF::gusleep(5000000);
-            cerr <<pthread_self()<<": completed "<<rIO.num_attempt<<"/"<<(NUM_REQUESTS_PER_FIBER*NUM_CONNECTIONS_PER_FIBER*NUM_USER_FIBERS_ALLOWED_TO_RUN)<<" ("<<(rIO.num_attempt*100/(NUM_REQUESTS_PER_FIBER*NUM_CONNECTIONS_PER_FIBER*NUM_USER_FIBERS_ALLOWED_TO_RUN))<<"%)"<<endl;
+            unsigned short int threadCompletionPercent = (rIO.num_attempt*100)/NUM_REQUESTS_TO_RUN;
+            cerr <<pthread_self()<<": completed "<<rIO.num_attempt<<"/"<<NUM_REQUESTS_TO_RUN<<" ("<<threadCompletionPercent<<"%)"<<endl;
+
+            if(threadCompletionPercent > THREAD_COMPLETION_PERCENT_TO_BAIL_ON)
+                break;
         }
     }
 
@@ -551,6 +557,7 @@ void print_usage()
 
 int main(int argc, char** argv)
 {
+    unsigned long long int DELAY_BETWEEN_STARTING_THREADS_IN_US = 0;
     if(pthread_key_create(&threadUpdateOverallInfo, 0) != 0)
     {
         cerr<<"couldnt create key for threadUpdateOverallInfo "<<strerror(errno)<<endl;
@@ -560,10 +567,13 @@ int main(int argc, char** argv)
     string rem_port = "80";
     string rem_addr = "127.0.0.1";
     char ch;
-	while ((ch = getopt(argc, argv, "M:Z:U:x:X:m:o:A:a:b:r:S:t:H:P:R:C:f:c:d:s:?h")) != -1) 
+	while ((ch = getopt(argc, argv, "M:Z:U:x:m:o:A:a:b:r:S:t:H:P:R:C:f:c:d:s:?h")) != -1) 
     {
 		switch (ch) 
         {
+            case'x':
+                DELAY_BETWEEN_STARTING_THREADS_IN_US = atoi(optarg);
+                break;
             case 'Z':
                 sleepShouldBeRandom = atoi(optarg);
                 break;
@@ -609,14 +619,10 @@ int main(int argc, char** argv)
                 HTTP_BASE_REQ_STRING = optarg;
                 break;
             case 'c':
-                CONNECT_AND_REQUEST_TIMEOUT = atoi(optarg)*1000;
-                if(CONNECT_AND_REQUEST_TIMEOUT <= 0)
-                    CONNECT_AND_REQUEST_TIMEOUT = -1;
+                CONNECT_AND_REQUEST_TIMEOUT = (atoi(optarg) > 0) ? atoi(optarg)*1000 : -1;
                 break;
             case 'd':
-                GET_RESPONSE_TIMEOUT = atoi(optarg)*1000;
-                if(GET_RESPONSE_TIMEOUT <= 0)
-                    GET_RESPONSE_TIMEOUT = -1;
+                GET_RESPONSE_TIMEOUT = (atoi(optarg) > 0) ? atoi(optarg)*1000 : -1;
                 break;
             case 's':
                 INTER_SEND_SLEEP = atoi(optarg)*1000;
@@ -642,6 +648,7 @@ int main(int argc, char** argv)
     remote_addr = rem_addr + ":" + rem_port;
     print_info();
 
+    NUM_REQUESTS_TO_RUN = NUM_REQUESTS_PER_FIBER*NUM_CONNECTIONS_PER_FIBER*NUM_USER_FIBERS_ALLOWED_TO_RUN;
 
     //create the threads
     pthread_t* thread = new pthread_t[NUM_THREADS];
@@ -651,6 +658,11 @@ int main(int argc, char** argv)
         list<UF*>* ufList = new list<UF*>();
         ufList->push_back(new SetupClientUF());
         UFIO::ufCreateThreadWithIO(&thread[i], ufList);
+        if(DELAY_BETWEEN_STARTING_THREADS_IN_US)
+        {
+            cerr<<"sleeping for "<<DELAY_BETWEEN_STARTING_THREADS_IN_US<<endl;
+            usleep(DELAY_BETWEEN_STARTING_THREADS_IN_US);
+        }
     }
 
 

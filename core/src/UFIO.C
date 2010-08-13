@@ -1,7 +1,7 @@
-#include "UFIO.H"
-#include "UFConnectionPool.H"
-#include "UFStatSystem.H"
-#include "UFStats.H"
+#include <UFIO.H>
+#include <UFConnectionPool.H>
+#include <UFStatSystem.H>
+#include <UFStats.H>
 #include <netdb.h>
 #include <sys/socket.h> 
 #include <sys/time.h> 
@@ -28,7 +28,7 @@ static int makeSocketNonBlocking(int fd)
     if ((flags = fcntl(fd, F_GETFL, 0)) < 0 ||
         fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0)
         return -1;
-
+    
     return fd;
 }
 
@@ -42,15 +42,22 @@ void UFIO::reset()
     _sleepInfo = 0;
     _markedActive = false;
     _active = true;
+    if (_readLineBuf)
+        free(_readLineBuf);
+    _readLineBufPos = 0;
+    _readLineBufSize = 0;
 }
 
 UFIO::~UFIO()
 {
     close();
+    if (_readLineBuf)
+        free(_readLineBuf);
 }
 
 UFIO::UFIO(UF* uf, int fd)
 { 
+    _readLineBuf = NULL;
     reset();
     _uf = (uf) ? uf : UFScheduler::getUF(pthread_self());
 
@@ -98,6 +105,8 @@ bool UFIO::isSetup(bool makeNonBlocking)
     return true;
 }
 
+int UFIO::RECV_SOCK_BUF = 57344;
+int UFIO::SEND_SOCK_BUF = 57344;
 int UFIO::setupConnectionToAccept(const char* i_a, 
                                   unsigned short int port, 
                                   unsigned short int backlog,
@@ -154,6 +163,11 @@ int UFIO::setupConnectionToAccept(const char* i_a,
         return -1;
     }
 
+    //set the recv and send buffers
+    setsockopt(fd, SOL_SOCKET, SO_RCVBUF, (char*) &UFIO::RECV_SOCK_BUF, sizeof( UFIO::RECV_SOCK_BUF ));
+    setsockopt(fd, SOL_SOCKET, SO_SNDBUF, (char*) &UFIO::SEND_SOCK_BUF, sizeof( UFIO::SEND_SOCK_BUF ));
+
+
     if (listen(fd, backlog) != 0)
     {
         cerr<<"couldnt setup listen to "<<interface_addr<<" on port "<<port<<" - "<<strerror(errno)<<endl;
@@ -162,11 +176,13 @@ int UFIO::setupConnectionToAccept(const char* i_a,
         return false;
     }
 
+    cerr << "setup listen socket at " << interface_addr << ':' << port << endl;
     return fd;
 }
 
 void UFIO::accept(UFIOAcceptThreadChooser* ufiotChooser,
                   unsigned short int ufLocation,
+                  unsigned short int port,
                   void* startingArgs,
                   void* stackPtr,
                   unsigned int stackSize)
@@ -196,6 +212,12 @@ void UFIO::accept(UFIOAcceptThreadChooser* ufiotChooser,
             exit(1); //TODO: may not be necessary to exit here
         }
     }
+
+    stringstream ss;
+    ss<<"connections.accept.["<<port<<"]";
+    unsigned int connAccepted;
+    UFStatSystem::registerStat(ss.str().c_str(), &connAccepted);
+
 
     int acceptFd = 0;
     struct sockaddr_in cli_addr;
@@ -238,6 +260,7 @@ void UFIO::accept(UFIOAcceptThreadChooser* ufiotChooser,
             }
 
             //make the new socket non-blocking
+            UFStatSystem::increment(connAccepted, 1);
             if(makeSocketNonBlocking(acceptFd) < 1)
             {
                 cerr<<"couldnt make accepted socket "<<acceptFd<<" non-blocking"<<strerror(errno)<<endl;
@@ -326,14 +349,124 @@ UFIOScheduler* UFIOScheduler::getUFIOS(pthread_t tid)
     return tmpUfios;
 }
 
-ssize_t UFIO::read(void *buf, size_t nbyte, TIME_IN_US timeout)
+
+
+ssize_t UFIO::readLine(char* buf, size_t n, char delim)
+{
+    ssize_t res = 0;
+    size_t prev_len = 0;
+    if (!n) return 0;
+    if (_readLineBufPos > 0) {
+        prev_len = ((_readLineBufPos >= n) ? n-1 : _readLineBufPos);
+        char* pos = (char*)memchr(_readLineBuf, delim, prev_len);
+        if (pos) { //found the delim
+            prev_len = pos - _readLineBuf;
+            _readLineBufPos--;
+        }
+        memcpy(buf, _readLineBuf, prev_len);
+        _readLineBufPos -= prev_len;
+        if (pos)
+            memmove(_readLineBuf, _readLineBuf+prev_len+1, _readLineBufPos);
+        else
+            memmove(_readLineBuf, _readLineBuf+prev_len, _readLineBufPos);
+        
+        if (pos || prev_len >= n-1)
+            return prev_len;
+    }
+    _readLineBufPos = 0;
+    while (prev_len < n-1) {
+        res = read(buf+prev_len, n-prev_len, -1);
+        if (res < 0) {
+            return res;
+        } else if (res == 0) {
+            return prev_len;
+        } else {
+            char* pos = (char*)memchr(buf+prev_len, delim, res);
+            if (pos) { //found the delim
+                if (pos < buf+prev_len+res-1) {
+                    _readLineBufPos = buf+prev_len+res-1-pos;
+                    if (_readLineBufSize < _readLineBufPos) {
+                        if (!_readLineBufSize) 
+                            _readLineBufSize = 64;
+                        else 
+                            free(_readLineBuf);
+                        for ( ; _readLineBufSize < _readLineBufPos; _readLineBufSize <<= 1);
+                        _readLineBuf = (char*)malloc(_readLineBufSize);
+                    }
+                    memcpy(_readLineBuf, pos+1, _readLineBufPos);
+                }
+                prev_len = pos-buf;
+                buf[prev_len] = '\0';
+                break;
+            } else {
+                prev_len += res;
+            }
+            buf[prev_len] = '\0';
+        }
+    }
+    return prev_len;
+}
+
+ssize_t UFIO::readLine(std::string &out, size_t n, char delim)
+{
+    if (!n) return 0;
+    char tempbuf[n];
+    ssize_t r = readLine(tempbuf, n, delim);
+    if (r >= 0) 
+    {
+        out.assign(tempbuf, r);
+    }
+    return r;    
+}
+
+static inline TIME_IN_US setupTimeout(TIME_IN_US& timeout)
+{
+    TIME_IN_US now = 0;
+    if (timeout > -1) 
+    {
+        struct timeval now_tv;
+        gettimeofday(&now_tv, NULL);
+        now = timeInUS(now_tv);
+        timeout += now;
+    }
+    return now;
+}
+
+static inline bool calculateLoopedTimeout(TIME_IN_US& now, TIME_IN_US& timeout)
+{
+    if(now)
+    {
+        struct timeval now_tv;
+        gettimeofday(&now_tv, NULL);
+        now = timeInUS(now_tv);
+        if (now >= timeout)
+            return false;
+    }
+    return true;
+}
+
+ssize_t UFIO::read(void *buf, size_t totalBytes, TIME_IN_US timeout)
 {
     UFIOScheduler* tmpUfios = _ufios ? _ufios : UFIOScheduler::getUFIOS();
 
-    ssize_t n = 0;;
+    if (_readLineBufPos > 0) 
+    {
+        size_t prev_len = ((_readLineBufPos > totalBytes) ? totalBytes : _readLineBufPos);
+        memcpy(buf, _readLineBuf, prev_len);
+        _readLineBufPos -= prev_len;
+        memmove(_readLineBuf, _readLineBuf+prev_len, _readLineBufPos);
+        if (prev_len == totalBytes)
+            return prev_len;
+        totalBytes -= prev_len;
+    }
+
+    TIME_IN_US now = setupTimeout(timeout);
+    bool shouldCheckTimeout = false; //the flag ensures that we dont re-do gettimeofday right after the read/write call the first time
+
+    ssize_t n = 0;
     while(1)
     {
-        n = ::read(_fd, buf, nbyte);
+        n = ::read(_fd, buf, totalBytes);
         if(n > 0) 
         {
             UFStatSystem::increment(UFStats::bytesRead, n);
@@ -341,20 +474,37 @@ ssize_t UFIO::read(void *buf, size_t nbyte, TIME_IN_US timeout)
         }
         else if(n < 0)
         {
-            if((errno == EAGAIN) || (errno == EWOULDBLOCK))
+            if ((errno == EAGAIN) || (errno == EWOULDBLOCK))
             {
-                _errno = 0;
-                _markedActive = false;
-                while(!_markedActive) 
+                if(!timeout) //optimization for the case that the user doesnt want a timeout
                 {
-                    //wait for something to read first
-                    if(!tmpUfios->setupForRead(this, timeout))
-                        return -1;
+                    _errno = ETIMEDOUT;
+                    return -1;
                 }
-                continue;
+
+                _markedActive = false;
+                while(!_markedActive)
+                {
+                    if(shouldCheckTimeout && !calculateLoopedTimeout(now, timeout))
+                    {
+                        _errno = ETIMEDOUT;
+                        return -1;
+                    }
+                    //wait for something to read first
+                    if(!tmpUfios->setupForRead(this, timeout-now))
+                        return -1;
+                    if(_markedActive) //found some activity on fd, so read
+                        break;
+                }
             }
             else if(errno == EINTR)
-                continue;
+            {
+                if(!calculateLoopedTimeout(now, timeout))
+                {
+                    _errno = ETIMEDOUT;
+                    return -1;
+                }
+            }
             else
             {
                 _errno = errno;
@@ -363,28 +513,28 @@ ssize_t UFIO::read(void *buf, size_t nbyte, TIME_IN_US timeout)
         }
         else if(n == 0)
             break;
+        shouldCheckTimeout = true;
     }
-
-    // Increment stat for bytes written
-    if(n > 0)
-        UFStatSystem::increment(UFStats::bytesRead, n);
 
     return n;
 }
 
-ssize_t UFIO::write(const void *buf, size_t nbyte, TIME_IN_US timeout)
+ssize_t UFIO::write(const void *buf, size_t totalBytes, TIME_IN_US timeout)
 {
     UFIOScheduler* tmpUfios = _ufios ? _ufios : UFIOScheduler::getUFIOS();
 
-    ssize_t n = 0;;
-    unsigned int amtWritten = 0;
+    TIME_IN_US now = setupTimeout(timeout);
+    bool shouldCheckTimeout = false;
+
+    ssize_t n = 0;
+    size_t amtWritten = 0;
     while(1)
     {
-        n = ::write(_fd, (char*)buf+amtWritten, nbyte-amtWritten);
+        n = ::write(_fd, (char*)buf+amtWritten, totalBytes-amtWritten);
         if(n > 0)
         {
             amtWritten += n;
-            if(amtWritten == nbyte)
+            if(amtWritten == totalBytes)
             {
                 UFStatSystem::increment(UFStats::bytesWritten, n);
                 return amtWritten;
@@ -394,19 +544,36 @@ ssize_t UFIO::write(const void *buf, size_t nbyte, TIME_IN_US timeout)
         }
         else if(n < 0)
         {
-            _errno = errno;
             if((errno == EAGAIN) || (errno == EWOULDBLOCK))
             {
+                if (!timeout) //dont wait to write
+                {
+                    _errno = ETIMEDOUT;
+                    return -1;
+                }
+
                 _markedActive = false;
-                _errno = 0;
                 while(!_markedActive)
                 {
-                    if(!tmpUfios->setupForWrite(this, timeout))
+                    if(shouldCheckTimeout && !calculateLoopedTimeout(now, timeout))
+                    {
+                        _errno = ETIMEDOUT;
                         return -1;
+                    }
+                    if(!tmpUfios->setupForWrite(this, timeout-now))
+                        return -1;
+                    if(_markedActive) //can write, so write
+                        break;
                 }
             }
             else if(errno == EINTR)
-                continue;
+            {
+                if(!calculateLoopedTimeout(now, timeout))
+                {
+                    _errno = ETIMEDOUT;
+                    return -1;
+                }
+            }
             else
             {
                 _errno = errno;
@@ -415,6 +582,7 @@ ssize_t UFIO::write(const void *buf, size_t nbyte, TIME_IN_US timeout)
         }
         else if(n == 0)
             break;
+        shouldCheckTimeout = true;
     }
 
     // Increment stat for bytes written
@@ -425,8 +593,8 @@ ssize_t UFIO::write(const void *buf, size_t nbyte, TIME_IN_US timeout)
 }
 
 bool UFIO::connect(const struct sockaddr *addr, 
-               int addrlen, 
-               TIME_IN_US timeout)
+                   socklen_t addrlen, 
+                   TIME_IN_US timeout)
 {
     if(!isSetup()) //create the socket and make the socket non-blocking
     {
@@ -438,15 +606,31 @@ bool UFIO::connect(const struct sockaddr *addr,
     //find the scheduler for this request
     UFIOScheduler* tmpUfios = _ufios ? _ufios : UFIOScheduler::getUFIOS();
 
+    TIME_IN_US now = setupTimeout(timeout);
+
+    setsockopt(_fd, SOL_SOCKET, SO_RCVBUF, (char*) &UFIO::RECV_SOCK_BUF, sizeof( UFIO::RECV_SOCK_BUF ));
+    setsockopt(_fd, SOL_SOCKET, SO_SNDBUF, (char*) &UFIO::SEND_SOCK_BUF, sizeof( UFIO::SEND_SOCK_BUF ));
+
     while(::connect(_fd, addr, addrlen) < 0)
     {
         if(errno == EINTR)
-            continue;
+        {
+            if(!calculateLoopedTimeout(now, timeout))
+            {
+                _errno = ETIMEDOUT;
+                return false;
+            }
+        }
         else if(errno == EINPROGRESS || errno == EAGAIN)
         {
-            if(!tmpUfios->setupForConnect(this, timeout))
+            if(!tmpUfios->setupForConnect(this, timeout-now))
             {
                 _errno = errno;
+                return false;
+            }
+            if(!calculateLoopedTimeout(now, timeout))
+            {
+                _errno = ETIMEDOUT;
                 return false;
             }
         }
@@ -460,38 +644,58 @@ bool UFIO::connect(const struct sockaddr *addr,
     return true;
 }
 
-int UFIO::sendto(const char *buf, int len, const struct sockaddr *to, int tolen, TIME_IN_US timeout)
+int UFIO::sendto(const char *buf, size_t len, const struct sockaddr *to, socklen_t tolen, TIME_IN_US timeout)
 {
     UFIOScheduler* tmpUfios = _ufios ? _ufios : UFIOScheduler::getUFIOS();
+    
+    TIME_IN_US now = setupTimeout(timeout);
+    bool shouldCheckTimeout = false;
 
-    ssize_t n = 0;;
-    unsigned int amtWritten = 0;
+    ssize_t n = 0;
+    size_t amtWritten = 0;
     while(1)
     {
         n = ::sendto(_fd, buf+amtWritten, len-amtWritten, 0, to, tolen);
         if(n > 0)
         {
             amtWritten += n;
-            if((int)amtWritten == len)
+            if(amtWritten == len)
                 return amtWritten;
             else
                 continue;
         }
         else if(n < 0)
         {
-            _errno = errno;
             if((errno == EAGAIN) || (errno == EWOULDBLOCK))
             {
+                if(!timeout)
+                {
+                    _errno = ETIMEDOUT;
+                    return -1;
+                }
+
                 _markedActive = false;
-                _errno = 0;
                 while(!_markedActive)
                 {
-                    if(!tmpUfios->setupForWrite(this, timeout))
+                    if(shouldCheckTimeout && !calculateLoopedTimeout(now, timeout))
+                    {
+                        _errno = ETIMEDOUT;
                         return -1;
+                    }
+                    if(!tmpUfios->setupForWrite(this, timeout-now))
+                        return -1;
+                    if(_markedActive)
+                        break;
                 }
             }
             else if(errno == EINTR)
-                continue;
+            {
+                if(!calculateLoopedTimeout(now, timeout))
+                {
+                    _errno = ETIMEDOUT;
+                    return -1;
+                }
+            }
             else
             {
                 _errno = errno;
@@ -500,17 +704,21 @@ int UFIO::sendto(const char *buf, int len, const struct sockaddr *to, int tolen,
         }
         else if(n == 0)
             break;
+        shouldCheckTimeout = true;
     }
     return n;
 }
 
 int UFIO::sendmsg(const struct msghdr *msg, 
                   int flags,
-	              TIME_IN_US timeout)
+                  TIME_IN_US timeout)
 {
     UFIOScheduler* tmpUfios = _ufios ? _ufios : UFIOScheduler::getUFIOS();
 
-    ssize_t n = 0;;
+    TIME_IN_US now = setupTimeout(timeout);
+    bool shouldCheckTimeout = false;
+
+    ssize_t n = 0;
     while(1)
     {
         n = ::sendmsg(_fd, msg, flags); 
@@ -518,19 +726,36 @@ int UFIO::sendmsg(const struct msghdr *msg,
             continue;
         else if(n < 0)
         {
-            _errno = errno;
             if((errno == EAGAIN) || (errno == EWOULDBLOCK))
             {
+                if (!timeout)
+                {
+                    _errno = ETIMEDOUT;
+                    return -1;
+                }
+
                 _markedActive = false;
-                _errno = 0;
                 while(!_markedActive)
                 {
-                    if(!tmpUfios->setupForWrite(this, timeout))
+                    if(shouldCheckTimeout && !calculateLoopedTimeout(now, timeout))
+                    {
+                        _errno = ETIMEDOUT;
                         return -1;
+                    }
+                    if(!tmpUfios->setupForWrite(this, timeout-now))
+                        return -1;
+                    if(_markedActive) //can write, so write
+                        break;
                 }
             }
             else if(errno == EINTR)
-                continue;
+            {
+                if(!calculateLoopedTimeout(now, timeout))
+                {
+                    _errno = ETIMEDOUT;
+                    return -1;
+                }
+            }
             else
             {
                 _errno = errno;
@@ -539,39 +764,60 @@ int UFIO::sendmsg(const struct msghdr *msg,
         }
         else if(n == 0)
             break;
+        shouldCheckTimeout = true;
     }
     return n;
 }
 
 int UFIO::recvfrom(char *buf, 
-                   int len, 
+                   size_t len, 
                    struct sockaddr *from,
-		           int *fromlen, 
+                   socklen_t *fromlen, 
                    TIME_IN_US timeout)
 {
     UFIOScheduler* tmpUfios = _ufios ? _ufios : UFIOScheduler::getUFIOS();
 
-    ssize_t n = 0;;
+    TIME_IN_US now = setupTimeout(timeout);
+    bool shouldCheckTimeout = false;
+
+    ssize_t n = 0;
     while(1)
     {
-        n = ::recvfrom(_fd, buf, len, 0, from, (socklen_t *)fromlen);
+        n = ::recvfrom(_fd, buf, len, 0, from, fromlen);
         if(n > 0)
             return n;
         else if(n < 0)
         {
             if((errno == EAGAIN) || (errno == EWOULDBLOCK))
             {
-                _errno = 0;
+                if (!timeout)
+                {
+                    _errno = ETIMEDOUT;
+                    return -1;
+                }
+
                 _markedActive = false;
                 while(!_markedActive)
                 {
-                    if(!tmpUfios->setupForRead(this, timeout))
+                    if(shouldCheckTimeout && !calculateLoopedTimeout(now, timeout))
+                    {
+                        _errno = ETIMEDOUT;
                         return -1;
+                    }
+                    if(!tmpUfios->setupForRead(this, timeout-now))
+                        return -1;
+                    if(_markedActive) //can write, so write
+                        break;
                 }
-                continue;
             }
             else if(errno == EINTR)
-                continue;
+            {
+                if(!calculateLoopedTimeout(now, timeout))
+                {
+                    _errno = ETIMEDOUT;
+                    return -1;
+                }
+            }
             else
             {
                 _errno = errno;
@@ -580,15 +826,19 @@ int UFIO::recvfrom(char *buf,
         }
         else if(n == 0)
             break;
+        shouldCheckTimeout = true;
     }
     return n;
 }
 
 int UFIO::recvmsg(struct msghdr *msg, 
                   int flags,
-	              TIME_IN_US timeout)
+                  TIME_IN_US timeout)
 {
     UFIOScheduler* tmpUfios = _ufios ? _ufios : UFIOScheduler::getUFIOS();
+
+    TIME_IN_US now = setupTimeout(timeout);
+    bool shouldCheckTimeout = false;
 
     ssize_t n = 0;
     while(1)
@@ -600,17 +850,35 @@ int UFIO::recvmsg(struct msghdr *msg,
         {
             if((errno == EAGAIN) || (errno == EWOULDBLOCK))
             {
-                _errno = 0;
+                if (!timeout)
+                {
+                    _errno = ETIMEDOUT;
+                    return -1;
+                }
+
                 _markedActive = false;
                 while(!_markedActive)
                 {
-                    if(!tmpUfios->setupForRead(this, timeout))
+                    if(shouldCheckTimeout && !calculateLoopedTimeout(now, timeout))
+                    {
+                        _errno = ETIMEDOUT;
                         return -1;
+                    }
+                    if(!tmpUfios->setupForRead(this, timeout-now))
+                        return -1;
+                    if(_markedActive) //can write, so write
+                        break;
                 }
                 continue;
             }
             else if(errno == EINTR)
-                continue;
+            {
+                if(!calculateLoopedTimeout(now, timeout))
+                {
+                    _errno = ETIMEDOUT;
+                    return -1;
+                }
+            }
             else
             {
                 _errno = errno;
@@ -619,6 +887,7 @@ int UFIO::recvmsg(struct msghdr *msg,
         }
         else if(n == 0)
             break;
+        shouldCheckTimeout = true;
     }
     return n;
 }
@@ -732,7 +1001,7 @@ bool EpollUFIOScheduler::addToScheduler(UFIO* ufio, void* inputInfo, TIME_IN_US 
     }
 
 
-    if(to) //add to the sleep queue for the epoll queue TODO
+    if(to > 0) //dont consider timeouts less than 1
     {
         struct timeval now;
         gettimeofday(&now, 0);
@@ -746,7 +1015,7 @@ bool EpollUFIOScheduler::addToScheduler(UFIO* ufio, void* inputInfo, TIME_IN_US 
         }
         ufsi->_ufio = ufio;
         ufio->_sleepInfo = ufsi;
-        unsigned long long int timeToWakeUp = now.tv_sec*1000000+now.tv_usec + to;
+        TIME_IN_US timeToWakeUp = now.tv_sec*1000000+now.tv_usec + to;
         if(_earliestWakeUpFromSleep > timeToWakeUp ||
            !_earliestWakeUpFromSleep)
             _earliestWakeUpFromSleep = timeToWakeUp;
@@ -758,9 +1027,10 @@ bool EpollUFIOScheduler::addToScheduler(UFIO* ufio, void* inputInfo, TIME_IN_US 
     ufio->_markedActive = false;
     if(!wait)
         return true;
+
     ufio->getUF()->block(); //switch context till someone wakes me up
 
-    if(!to) //nothing to do w/ no timeout
+    if(to == -1) //nothing to do w/ no timeout
         return true;
 
     if(ufio->_sleepInfo)
@@ -769,7 +1039,7 @@ bool EpollUFIOScheduler::addToScheduler(UFIO* ufio, void* inputInfo, TIME_IN_US 
         ufio->_sleepInfo = 0;
         return true;
     }
-    //ufio->_errno = ETIMEDOUT
+    ufio->_errno = ETIMEDOUT;
     return false;
 }
 
@@ -910,7 +1180,7 @@ static void* notifyEpollFunc(void* args)
     if(!args)
         return 0;
 #ifdef PIPE_NOT_EFD
-    write(*((int*)args), &eventFDChar, 1);
+    if(write(*((int*)args), &eventFDChar, 1) > 0) {}
 #else
     eventfd_write(*((int*)args), efdIncrementor); //TODO: deal w/ error case later
 #endif
@@ -968,13 +1238,10 @@ void EpollUFIOScheduler::waitForEvents(TIME_IN_US timeToWait)
 
     int nfds;
     struct timeval now;
-    unsigned long long int timeNow = 0;
+    TIME_IN_US timeNow = 0;
     IntUFIOMap::iterator index;
     UFIO* ufio = 0;
     UF* uf = 0;
-    unsigned long long int amtToSleep = timeToWait;
-    int i = 0;
-    _interruptedByEventFd = false;
     UFScheduler* ufs = _uf->getParentScheduler();
     list<UF*> ufsToAddToScheduler;
     if(!ufs)
@@ -982,7 +1249,11 @@ void EpollUFIOScheduler::waitForEvents(TIME_IN_US timeToWait)
         cerr<<"epoll scheduler has to be connected to some scheduler"<<endl;
         return;
     }
-    unsigned long long int amtToSleepFromUFS = 0;
+
+    TIME_IN_US amtToSleep = timeToWait;
+    int i = 0;
+    _interruptedByEventFd = false;
+    int sleepMS = 0;
     while(1)
     {
         if(_interruptedByEventFd) //this is so that the last interruption gets handled right away
@@ -991,16 +1262,16 @@ void EpollUFIOScheduler::waitForEvents(TIME_IN_US timeToWait)
             _uf->yield();
         }
 
-        if(ufs->getActiveRunningListSize() < 2) //means that epoll is the only fiber thats currently active
-        {
-            if(amtToSleep > (amtToSleepFromUFS = ufs->getAmtToSleep()))
-                amtToSleep = (int)(amtToSleepFromUFS/1000);
-            else
-                amtToSleep = (amtToSleep > 1000 ? (int)(amtToSleep/1000) : 1); //let epoll sleep for atleast 1ms
-        }
+        if(ufs->getActiveRunningListSize() > 1) //epoll is not the only fiber thats currently active
+            sleepMS = 0; //dont wait on epoll - since there are other ufs waiting to run
         else
-            amtToSleep = 0; //dont wait on epoll - since there are other ufs waiting to run
-        nfds = ::epoll_wait(_epollFd, _epollEventStruct, _maxFds, amtToSleep);
+        {
+            if(amtToSleep > ufs->getAmtToSleep())
+                amtToSleep = ufs->getAmtToSleep();
+            sleepMS = (amtToSleep > 1000 ? (int)(amtToSleep/1000) : 1); //let epoll sleep for atleast 1ms
+        }
+
+        nfds = ::epoll_wait(_epollFd, _epollEventStruct, _maxFds, sleepMS);
         if(nfds > 0)
         {
             //for each of the fds that had activity activate them
@@ -1016,10 +1287,9 @@ void EpollUFIOScheduler::waitForEvents(TIME_IN_US timeToWait)
                         exit(1);
                     }
                     ufio->_markedActive = true;
-                    if(ufio->_active)
-                        //activate the fiber
+                    if(ufio->_active) //activate the UF only if its being watched by some UF
                         ufs->addFiberToScheduler(uf, 0);
-                    //else must be the case that no one is watching this ufio - such as in the case where the conn. pool holding onto the conn.
+                    //else must be the case that no one is watching this ufio - such as in the case where the conn. pool holding is onto the conn.
                 }
                 else
                 {
@@ -1108,11 +1378,99 @@ void IORunner::run()
     ioRunner->waitForEvents(1000000); //TODO: allow to change the epoll interval later
 }
 
-void UFIO::ufCreateThreadWithIO(pthread_t* tid, list<UF*>* ufsToStartWith)
+void UFIO::ufCreateThreadWithIO(pthread_t* tid, UFList* ufsToStartWith)
 {
-    ufsToStartWith->push_front(new IORunner());
-
     // Add connection pool cleaner
     //ufsToStartWith->push_back(new UFConnectionPoolCleaner); //TODO: figure out how to deal w/ inactive connections
+    ufsToStartWith->push_back(new IORunner()); //we want this to run first and insertions happen in a LIFO manner so we add this uf to the end
     UFScheduler::ufCreateThread(tid, ufsToStartWith);
+}
+
+const unsigned int MAX_IOV = 16;
+ssize_t UFIO::writev(const struct iovec *iov, int iov_size, TIME_IN_US timeout)
+{
+    ssize_t n, retVal;
+    struct iovec* tmp_iov;
+    struct iovec local_iov[MAX_IOV];
+
+    size_t totalBytes = 0;
+    int index;
+    for (index = 0; index < iov_size; index++)
+        totalBytes += iov[index].iov_len;
+
+    retVal = (ssize_t)totalBytes;
+    size_t bytesRemaining = totalBytes;
+    tmp_iov = (struct iovec *) iov;
+    int iov_cnt = iov_size;
+
+    UFIOScheduler* tmpUfios = _ufios ? _ufios : UFIOScheduler::getUFIOS();
+    _markedActive = false;
+    _errno = 0;
+    while (bytesRemaining > 0)
+    {
+        if (iov_cnt == 1)
+        {
+            if (write(tmp_iov[0].iov_base, bytesRemaining, timeout) != (ssize_t) bytesRemaining)
+                retVal = -1;
+            break;
+        }
+        if ((n = ::writev(_fd, tmp_iov, iov_cnt)) < 0)
+        {
+            if(errno == EINTR)
+                continue;
+            else if(errno == EAGAIN || errno == EWOULDBLOCK)
+            {
+                //TODO: subtract the remaining amt. from the timeout
+                if(!tmpUfios->setupForWrite(this, timeout))
+                {
+                    retVal = -1;
+                    break;
+                }
+            }
+            else
+            {
+                retVal = -1;
+                _errno = errno;
+                break;
+            }
+        }
+        else
+        {
+            if ((size_t) n == bytesRemaining)
+                break;
+            bytesRemaining -= n;
+            n = (ssize_t)(totalBytes - bytesRemaining);
+            for (index = 0; (size_t) n >= iov[index].iov_len; index++)
+                n -= iov[index].iov_len;
+
+            if (tmp_iov == iov)
+            {
+                if ((iov_size - index) <= (int) MAX_IOV)
+                    tmp_iov = local_iov;
+                else
+                {
+                    tmp_iov = (struct iovec*) calloc(1, (iov_size - index) * sizeof(struct iovec));
+                    if (tmp_iov == NULL)
+                    {
+                        _errno = errno;
+                        return -1;
+                    }
+                }
+            }
+
+            tmp_iov[0].iov_base = &(((char *)iov[index].iov_base)[n]);
+            tmp_iov[0].iov_len = iov[index].iov_len - n;
+            index++;
+            for (iov_cnt = 1; index < iov_size; iov_cnt++, index++)
+            {
+                tmp_iov[iov_cnt].iov_base = iov[index].iov_base;
+                tmp_iov[iov_cnt].iov_len = iov[index].iov_len;
+            }
+        }
+    }
+
+    if (tmp_iov != iov && tmp_iov != local_iov)
+        free(tmp_iov);
+
+    return retVal;
 }
