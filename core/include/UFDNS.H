@@ -1,8 +1,8 @@
 #ifndef UF_DNS_H
 #define UF_DNS_H
 
-#include <UF.H>
-#include <UFIO.H>
+#include "UF.H"
+#include "UFIO.H"
 class UFHostEnt;
 class UFDNS : public UFIO
 {

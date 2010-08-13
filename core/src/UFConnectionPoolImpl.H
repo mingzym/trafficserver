@@ -2,37 +2,18 @@
 #define UFCONNECTIONPOOLIMPL_H
 
 #include <time.h>
-#include <UF.H>
-#include <UFConnectionPool.H>
 
-#include <ext/hash_map>
-using namespace std;        
-namespace std { using namespace __gnu_cxx; }
-struct VoidPtrHash 
-{
-    size_t operator()(void* p) const 
-    {
-        return reinterpret_cast< uintptr_t >(p);
-    }
-};
-
-struct VoidPtrEqual 
-{
-    bool operator()(void* v1, void* v2) const
-    {
-        return (v1 == v2);
-    }
-};
-
+#include "UF.H"
+#include "UFConnectionPool.H"
 
 struct UFIO;
 struct UFConnIPInfo;
 struct UFConnGroupInfo;
 
-typedef std::map<std::string, UFConnGroupInfo*>                 GroupIPMap;
-typedef std::map<std::string, UFConnIPInfo*>                    IPInfoStore;
-typedef std::multimap<unsigned long long int, UFIO*>            UFIOIntMap;
-typedef hash_map<void*, UFConnIPInfo*, VoidPtrHash, VoidPtrEqual> UFConnIPInfoMap;
+typedef std::map<std::string, UFConnGroupInfo*> GroupIPMap;
+typedef std::map<std::string, UFConnIPInfo*>    IPInfoStore;
+typedef std::map<UFIO*, time_t>                 UFIOIntMap;
+typedef std::map<UFIO*, UFConnIPInfo*>          UFConnIPInfoMap;
 
 const time_t DEFAULT_TIMEOUT_OF_IP_ON_FAILURE = 10;
 struct UFConnectionPoolImpl
@@ -45,7 +26,7 @@ struct UFConnectionPoolImpl
     
     bool addGroup(UFConnGroupInfo* stGroupInfo);
     void removeGroup(const std::string& name);
-    UFIO* getConnection(const std::string& groupName, bool waitForConnection = true, TIME_IN_US connectTimeout = -1);
+    UFIO* getConnection(const std::string& groupName, bool waitForConnection = true);
     void releaseConnection(UFIO* ufIO, bool connOk = true);
     UFConnGroupInfo* addGroupImplicit(const std::string& groupName);
 
@@ -64,7 +45,7 @@ protected:
     time_t                      _timeToTimeoutIPAfterFailure;  ///How long should we time out an IP if there is a failure
 
     UFConnIPInfo* getIPInfo(const std::string& name);
-    bool createIPInfo(const std::string& groupName, UFConnGroupInfo* groupInfo, TIME_IN_US connectTimeout = -1);
+    bool createIPInfo(const std::string& groupName, UFConnGroupInfo* groupInfo);
 };
 inline void UFConnectionPoolImpl::setMaxSimulConnsPerHost(int input) { _maxSimulConnsPerHost = input; }
 inline int UFConnectionPoolImpl::getMaxSimulConnsPerHost() { return _maxSimulConnsPerHost; }
@@ -87,6 +68,8 @@ struct UFConnIPInfo
     unsigned int        getInProcessCount() const;
     bool                getPersistent() const;
     unsigned int        getTimeToFailOutIPAfterFailureInSecs() const;
+    unsigned int        getTimeToExpire() const;
+    void                setTimeToExpire(time_t input);
     TIME_IN_US          getConnectTimeout() const;
     time_t              getTimedOut() const;
     void                setTimedOut(time_t t);
@@ -108,6 +91,7 @@ protected:
     unsigned int        _maxSimultaneousConns;
     bool                _persistent; 
 
+    unsigned int        _timeToExpireDNSInfo;
     unsigned int        _timeToFailOutIPAfterFailureInSecs; ///how many s to try before considering the connect a failure
     TIME_IN_US          _connectTimeout; ///how many ms to try before considering the connect a failure
     time_t              _timedOut;
@@ -119,13 +103,15 @@ protected:
 };
 inline time_t UFConnIPInfo::getLastUsed() const { return _lastUsed; }
 inline struct sockaddr_in* UFConnIPInfo::getSin() { return &_sin; }
-inline const std::string& UFConnIPInfo::getIP() const { return _ip; }
+inline const string& UFConnIPInfo::getIP() const { return _ip; }
 inline unsigned int UFConnIPInfo::getMaxSimultaneousConns() const { return _maxSimultaneousConns; }
 inline unsigned int UFConnIPInfo::getInProcessCount() const { return _inProcessCount; }
 inline void UFConnIPInfo::incInProcessCount(int numToIncrement) { _inProcessCount += numToIncrement; }
 inline bool UFConnIPInfo::getPersistent() const { return _persistent; }
 inline unsigned int UFConnIPInfo::getTimeToFailOutIPAfterFailureInSecs() const { return _timeToFailOutIPAfterFailureInSecs; }
 inline TIME_IN_US UFConnIPInfo::getConnectTimeout() const { return _connectTimeout; }
+inline unsigned int UFConnIPInfo::getTimeToExpire() const { return _timeToExpireDNSInfo; }
+inline void UFConnIPInfo::setTimeToExpire(time_t input) { _timeToExpireDNSInfo = input; }
 inline time_t UFConnIPInfo::getTimedOut() const { return _timedOut; }
 inline void UFConnIPInfo::setTimedOut(time_t t) { _timedOut = t; }
 inline UFMutex* UFConnIPInfo::getMutexToCheckSomeConnection() { return &_someConnectionAvailable; }
@@ -155,6 +141,14 @@ inline time_t UFConnGroupInfo::getTimeToExpireAt() const { return _timeToExpireA
 inline void UFConnGroupInfo::setTimeToExpireAt(time_t input) { _timeToExpireAt = input; }
 inline UFConnIPInfoList& UFConnGroupInfo::getIpInfoList() { return _ipInfoList; }
 
+
+struct UFConnectionPoolCleaner : public UF
+{
+    void run();
+    UFConnectionPoolCleaner (bool registerMe = false);
+    UF* createUF() { return new UFConnectionPoolCleaner(); }
+};
+inline UFConnectionPoolCleaner::UFConnectionPoolCleaner (bool registerMe) { /*if(registerMe) _myLoc = UFFactory::getInstance()->registerFunc((UF*)this);*/ }
 
 
 #endif

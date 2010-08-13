@@ -6,7 +6,6 @@
 namespace UFStats
 {
     void registerStats(bool lock_needed = false);
-    extern uint32_t currentConnections;
     extern uint32_t connectionsHandled;
     extern uint32_t txnSuccess;
     extern uint32_t txnFail;

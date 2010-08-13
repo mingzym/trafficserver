@@ -4,9 +4,11 @@
 #include <string>
 #include <ext/hash_map>
 #include <stdint.h>
-#include <UF.H>
+#include "UF.H"
 
+using namespace std;
 namespace std { using namespace __gnu_cxx; }
+
 
 
 
@@ -58,66 +60,40 @@ struct UFIO
     //TODO: create ipv6 accept model
     void accept(UFIOAcceptThreadChooser* ufiotChooser,
                 unsigned short int ufLocation,
-                unsigned short int port,
                 void* startingArgs,
                 void* stackPtr = 0,
                 unsigned int stackSize = 0);
 
     //The fxn will call isSetup which will make the connection request non-blocking and setup the socket
     //TODO: support ipv6 connect
-    bool connect(const struct sockaddr *addr, socklen_t addrlen, TIME_IN_US timeout);
+    bool connect(const struct sockaddr *addr, int addrlen, TIME_IN_US timeout);
 
-    /**
-     * @brief read until delimiter is encountered or n-1 bytes has been read
-     * @param buf the output buffer. The buffer is null terminated if readLine was successful.
-     * @param n the size of the buffer pointed to by buf in bytes
-     * @return number of bytes read, not including the delimiter on success. -1 on error, 
-     *         getErrno() will return the underlying error.
-     */
-    ssize_t readLine(char* buf, size_t n, char delim='\n');
-    /**
-     * @brief read until delimiter is encountered or n-1 bytes has been read
-     * @param out the output string
-     * @param n readLine will attempt to read at most n-1 bytes
-     * @return number of bytes read, not including the delimiter on success or -1 on error. 
-     *         getErrno() will return the underlying error.
-     */
-    ssize_t readLine(std::string &out, size_t n, char delim='\n');
-
-    /**
-     * @brief attempt to read nbytes from the underlying fd
-     * @param buf the output buffer
-     * @param timeout the timeout in microseconds. 0 indicates a non-blocking call, -1 is no timeout
-     * @returns number of bytes read, or -1 on error. getErrno() will return the underlying error
-     * 
-     * since this is most likely going to be run on an edge trigger system
-     * reads should be done in such a manner so that if the read call
-     * returns back nbyte, then a following read call
-     * should be made to ensure that nothing is left in the network buffer
-     * since in edge trigger no more events will be generated for data that was
-     * already seen earlier as being in the network. Therefore always make 
-     * another call to this fxn if the return was == to nbyte
-     */
-    ssize_t read(void *buf, size_t nbyte, TIME_IN_US timeout = -1);
-    ssize_t write(const void *buf, size_t nbyte, TIME_IN_US timeout = -1);
-    ssize_t writev(const struct iovec *iov, int iov_size, TIME_IN_US timeout = -1);
+    //since this is most likely going to be run on an edge trigger system
+    //reads should be done in such a manner so that if the read call
+    //returns back w/ the same number specified, then a following read call
+    //should be made to ensure that nothing is left in the network buffer
+    //since in edge trigger no more events will be generated for data that was
+    //already seen earlier as being in the network. Therefore always make 
+    //another call to this fxn if the return was == to nbyte
+    ssize_t read(void *buf, size_t nbyte, TIME_IN_US timeout = 0);
+    ssize_t write(const void *buf, size_t nbyte, TIME_IN_US timeout = 0);
     int sendto(const char *msg, 
-               size_t len,
-               const struct sockaddr *to, 
-               socklen_t tolen, 
-               TIME_IN_US timeout);
+                  int len,
+	              const struct sockaddr *to, 
+                  int tolen, 
+                  TIME_IN_US timeout);
     int sendmsg(const struct msghdr *msg, 
-                int flags,
-                TIME_IN_US timeout);
+                   int flags,
+	               TIME_IN_US timeout);
     int recvfrom(char *buf, 
-                 size_t len, 
-                 struct sockaddr *from,
-                 socklen_t *fromlen, 
-                 TIME_IN_US timeout);
+                    int len, 
+                    struct sockaddr *from,
+		            int *fromlen, 
+                    TIME_IN_US timeout);
     int recvmsg(struct msghdr *msg, 
-                int flags,
-                TIME_IN_US timeout);
-    
+                   int flags,
+	               TIME_IN_US timeout);
+
     bool close();
 
     bool setFd(int fd, bool makeNonBlocking = true);
@@ -131,23 +107,17 @@ struct UFIO
     unsigned int getRemotePort() const;
     UFIOScheduler* getUFIOScheduler() const;
 
-    static void ufCreateThreadWithIO(pthread_t* tid, UFList* ufsToStartWith);
+    static void ufCreateThreadWithIO(pthread_t* tid, std::list<UF*>* ufsToStartWith);
 
     UFSleepInfo*                _sleepInfo;
     bool                        _markedActive;
     bool                        _active;
-
-    static int                  RECV_SOCK_BUF;
-    static int                  SEND_SOCK_BUF;
 
 protected:
     int                         _fd;
     unsigned int                _errno;
     UF*                         _uf;
     UFIOScheduler*              _ufios;
-    char*                       _readLineBuf;
-    size_t                      _readLineBufPos;
-    size_t                      _readLineBufSize;
 
     UFIO() { reset(); }
     void reset();
@@ -169,8 +139,8 @@ inline unsigned int UFIO::getRemotePort() const { return _remotePort; };
 
 
 struct UFIOScheduler;
-//typedef std::map<pthread_t, UFIOScheduler*> ThreadFiberIOSchedulerMap;
-typedef std::hash_map<pthread_t, UFIOScheduler*, std::hash<uintptr_t> > ThreadFiberIOSchedulerMap;
+//typedef map<pthread_t, UFIOScheduler*> ThreadFiberIOSchedulerMap;
+typedef hash_map<pthread_t, UFIOScheduler*, hash<uintptr_t> > ThreadFiberIOSchedulerMap;
 
 struct UFConnectionPool;
 struct UFIOScheduler
@@ -178,13 +148,13 @@ struct UFIOScheduler
     UFIOScheduler();
     virtual ~UFIOScheduler();
 
-    virtual bool setupForConnect(UFIO* ufio, TIME_IN_US to = -1) = 0;
-    virtual bool setupForAccept(UFIO* ufio, TIME_IN_US to = -1) = 0;
-    virtual bool setupForRead(UFIO* ufio, TIME_IN_US to = -1) = 0;
-    virtual bool setupForWrite(UFIO* ufio, TIME_IN_US to = -1) = 0;
+    virtual bool setupForConnect(UFIO* ufio, TIME_IN_US to = 0) = 0;
+    virtual bool setupForAccept(UFIO* ufio, TIME_IN_US to = 0) = 0;
+    virtual bool setupForRead(UFIO* ufio, TIME_IN_US to = 0) = 0;
+    virtual bool setupForWrite(UFIO* ufio, TIME_IN_US to = 0) = 0;
     virtual bool closeConnection(UFIO* ufio) = 0;
     //TODO: support regular poll behavior
-    virtual bool rpoll(std::list<UFIO*>& ufioList, TIME_IN_US to = -1) = 0;
+    virtual bool rpoll(std::list<UFIO*>& ufioList, TIME_IN_US to = 0) = 0;
 
     virtual bool isSetup() { return false; }
     virtual void waitForEvents(TIME_IN_US timeToWait) = 0;
@@ -204,7 +174,7 @@ inline UFConnectionPool* UFIOScheduler::getConnPool() const { return _connPool; 
 
 #define MAX_FDS_FOR_EPOLL 128*1024-1
 //typedef map<int, UFIO*> IntUFIOMap;
-typedef std::hash_map<int, UFIO*, std::hash<int> > IntUFIOMap;
+typedef hash_map<int, UFIO*, hash<int> > IntUFIOMap;
 typedef std::multimap<TIME_IN_US, UFSleepInfo*> MapTimeUFIO;
 struct EpollUFIOScheduler : public UFIOScheduler
 {
@@ -215,15 +185,15 @@ struct EpollUFIOScheduler : public UFIOScheduler
     bool isSetup(); //call after the c'tor to verify that the structure is correctly setup
 
     //inputInfo is the flags info (its an int*) for this addition
-    bool setupForConnect(UFIO* ufio, TIME_IN_US to = -1);
-    bool setupForAccept(UFIO* ufio, TIME_IN_US to = -1);
-    bool setupForRead(UFIO* ufio, TIME_IN_US to = -1);
-    bool setupForWrite(UFIO* ufio, TIME_IN_US to = -1);
+    bool setupForConnect(UFIO* ufio, TIME_IN_US to = 0);
+    bool setupForAccept(UFIO* ufio, TIME_IN_US to = 0);
+    bool setupForRead(UFIO* ufio, TIME_IN_US to = 0);
+    bool setupForWrite(UFIO* ufio, TIME_IN_US to = 0);
     bool closeConnection(UFIO* ufio);
-    bool rpoll(std::list<UFIO*>& ufioList, TIME_IN_US to = -1);
+    bool rpoll(std::list<UFIO*>& ufioList, TIME_IN_US to = 0);
 
 
-    void waitForEvents(TIME_IN_US timeToWait = 0);
+    void waitForEvents(TIME_IN_US timeToWait = -1);
 
     bool                            _interruptedByEventFd;
 
@@ -238,16 +208,16 @@ protected:
 
 
     MapTimeUFIO                     _sleepList;
-    TIME_IN_US          _earliestWakeUpFromSleep;
+    unsigned long long int          _earliestWakeUpFromSleep;
 
     bool addToScheduler(UFIO* ufio, 
                         void* inputInfo /*flags to identify how ot add*/, 
-                        TIME_IN_US to = -1,
+                        TIME_IN_US to = 0,
                         bool wait = true, 
                         bool runEpollCtl = false);
 
 
-    std::deque<UFSleepInfo*>        _availableSleepInfo;
+    list<UFSleepInfo*>  _availableSleepInfo;
     UFSleepInfo* getSleepInfo();
     void releaseSleepInfo(UFSleepInfo& ufsi);
 };

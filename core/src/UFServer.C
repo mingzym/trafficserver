@@ -1,16 +1,13 @@
 #include <iostream>
 #include <errno.h>
 #include <string.h>
+#include "UFServer.H"
+#include "UFServer.H"
+
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <deque>
-#include <list>
-
-#include <UF.H>
-#include <UFStatSystem.H>
-#include <UFStats.H>
-#include <UFServer.H>
-#include <UFConf.H>
+#include "UFStatSystem.H"
+#include "UFStats.H"
 
 using namespace std;
 
@@ -18,15 +15,31 @@ using namespace std;
 //TODO: create monitoring port later
 //
 //
+static string getPrintableTime()
+{
+    char asctimeDate[32];
+    asctimeDate[0] = '\0';
+    time_t now = time(0);
+    asctime_r(localtime(&now), asctimeDate);
+
+    string response = asctimeDate;
+    size_t loc = response.find('\n');
+    if(loc != string::npos)
+        response.replace(loc, 1, "");
+    return response;
+}
+
 void UFServer::reset()
 {
     _addressToBindTo = "0";
-    _listenSockets.clear();
+    _listenFd = -1;
+    _port = 0;
     _creationTime = 0;
 
     MAX_THREADS_ALLOWED = 8;
     MAX_PROCESSES_ALLOWED = 1;
     MAX_ACCEPT_THREADS_ALLOWED = 1;
+    UF_STACK_SIZE = 8192;
 
     _threadChooser = 0;
 }
@@ -44,13 +57,9 @@ struct NewConnUF : public UF
             return;
 
         UFIOAcceptArgs* fiberStartingArgs = (UFIOAcceptArgs*) _startingArgs;
-
+        ((UFServer*) fiberStartingArgs->args)->handleNewConnection(fiberStartingArgs->ufio);
         // increment connections handled stat
         UFStatSystem::increment(UFStats::connectionsHandled);
-        // Keep track of current connections
-        UFStatSystem::increment(UFStats::currentConnections);
-        ((UFServer*) fiberStartingArgs->args)->handleNewConnection(fiberStartingArgs->ufio);
-        UFStatSystem::increment(UFStats::currentConnections, -1);
 
         //clear the client connection
         delete fiberStartingArgs->ufio;
@@ -80,22 +89,21 @@ struct AcceptRunner : public UF
 
         //add the scheduler for this 
         UFIO* ufio = new UFIO(UFScheduler::getUF());
-        if (socket.fd == -1)
-        {
-            socket.fd = UFIO::setupConnectionToAccept(ufserver->getBindingInterface(), socket.port /*, deal w/ backlog*/);
-        }
-        if (socket.fd < 0)
+        int fd = ufserver->getListenFd();
+        if(fd == -1)
+            fd = UFIO::setupConnectionToAccept(ufserver->getBindingInterface(), ufserver->getPort() /*, deal w/ backlog*/);
+        if(fd < 0)
         {
             cerr<<getPrintableTime()<<" "<<getpid()<<":couldnt setup listen socket"<<endl;
             exit(1);
         }
-        if(!ufio || !ufio->setFd(socket.fd, false/*has already been made non-blocking*/))
+        if(!ufio || !ufio->setFd(fd, false/*has already been made non-blocking*/))
         {
             cerr<<getPrintableTime()<<" "<<getpid()<<":couldnt setup accept thread"<<endl;
             return;
         }
 
-        ufio->accept(ufserver->_threadChooser, NewConnUF::_myLoc, socket.port, ufserver, 0, 0);
+        ufio->accept(ufserver->_threadChooser, NewConnUF::_myLoc, ufserver, 0, 0);
     }
     AcceptRunner(bool registerMe = false)
     {
@@ -105,38 +113,9 @@ struct AcceptRunner : public UF
     UF* createUF() { return new AcceptRunner(); }
     static AcceptRunner* _self;
     static int _myLoc;
-    UFServer::ListenSocket socket;
 };
 int AcceptRunner::_myLoc = -1;
 AcceptRunner* AcceptRunner::_self = new AcceptRunner(true);
-
-struct PerThreadInitializer : public UF
-{
-    void run()
-        {
-            if(!_startingArgs)
-                return;
-// Add conf manager for thread
-            UFConfManager *confManager = new UFConfManager;
-            int ret = pthread_setspecific(UFConfManager::threadSpecificKey, confManager);
-            cerr << getpid() << ":::Adding thread specific UFConfManager key " << UFConfManager::threadSpecificKey << " " << confManager << " " << ret << ", tid : " << pthread_self() << endl;
-
-            UFServer *_server = (UFServer *)_startingArgs;
-            _server->postThreadCreation();
-        }
-
-    UF* createUF() { return new PerThreadInitializer(); }
-
-    PerThreadInitializer(bool registerMe = false)
-    {
-        if(registerMe)
-            _myLoc = UFFactory::getInstance()->registerFunc((UF*)this);
-    }
-    static PerThreadInitializer* _self;
-    static int _myLoc;
-};
-int PerThreadInitializer::_myLoc = -1;
-PerThreadInitializer* PerThreadInitializer::_self = new PerThreadInitializer(true);
 
 void UFServer::startThreads()
 {
@@ -150,14 +129,7 @@ void UFServer::startThreads()
     //start the IO threads
     for(; i<MAX_THREADS_ALLOWED; i++)
     {
-        list<UF*>* ufsToAdd = new list<UF*>();
-        
-        PerThreadInitializer *pti = new PerThreadInitializer;
-        pti->_startingArgs = this;
-        ufsToAdd->push_back(pti);
-        
-        UFIO::ufCreateThreadWithIO(&(thread[i]), ufsToAdd);
-
+        UFIO::ufCreateThreadWithIO(&(thread[i]), new list<UF*>());
         cerr<<getPrintableTime()<<" "<<getpid()<<": created thread (with I/O) - "<<thread[i]<<endl;
         usleep(5000); //TODO: avoid the need for threadChooser to have a mutex - change to cond. var later
         //add the io threads to the thread chooser
@@ -180,19 +152,10 @@ void UFServer::startThreads()
     //start the accept thread
     for(; i<MAX_ACCEPT_THREADS_ALLOWED+MAX_THREADS_ALLOWED; i++)
     {
+        AcceptRunner* ar = new AcceptRunner();
+        ar->_startingArgs = this;
         list<UF*>* ufsToAdd = new list<UF*>();
-        for (ListenSocketList::iterator iter = _listenSockets.begin(); iter != _listenSockets.end(); ++iter)
-        {
-            AcceptRunner* ar = new AcceptRunner();
-            ar->_startingArgs = this;
-            ar->socket = *iter;
-            ufsToAdd->push_back(ar);
-        }
-            
-        PerThreadInitializer *pti = new PerThreadInitializer();
-        pti->_startingArgs = this;
-        ufsToAdd->push_back(pti);
-        
+        ufsToAdd->push_back(ar);
         UFIO::ufCreateThreadWithIO(&(thread[i]), ufsToAdd);
         usleep(5000); //TODO: let the thread finish initializing 
         addThread("ACCEPT", 0, thread[i]);
@@ -215,17 +178,14 @@ void UFServer::run()
     if(!_threadChooser)
         _threadChooser = new UFServerThreadChooser();
 
-    for (ListenSocketList::iterator iter = _listenSockets.begin(); iter != _listenSockets.end(); ++iter)
+    //bind to the socket (before the fork
+    _listenFd = UFIO::setupConnectionToAccept(_addressToBindTo.c_str(), _port); //TODO:set the backlog
+    if(_listenFd < 0)
     {
-        //bind to the socket (before the fork)
-        iter->fd = UFIO::setupConnectionToAccept(_addressToBindTo.c_str(), iter->port); //TODO:set the backlog
-        if(iter->fd < 0)
-        {
-            cerr<<getPrintableTime()<<" "<<getpid()<<": couldnt setup listen socket "<<strerror(errno)<<endl;
-            exit(1);
-        }
+        cerr<<getPrintableTime()<<" "<<getpid()<<": couldnt setup listen socket "<<strerror(errno)<<endl;
+        exit(1);
     }
-    
+
     if(!MAX_PROCESSES_ALLOWED) //an option to easily debug processes (or to only run in threaded mode)
     {
         preThreadRun();
@@ -254,7 +214,6 @@ void UFServer::run()
                 postForkPreRun();
                 preThreadRun();
                 startThreads();
-                postThreadRun();
                 exit(0);
             }
             cerr<<getPrintableTime()<<" "<<getpid()<<": (P): started child process: "<<pid<<endl;

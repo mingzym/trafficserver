@@ -1,7 +1,5 @@
-#include <UFAres.H>
+#include "UFAres.H"
 #include <stdio.h>
-
-using namespace std;
 
 static void printHost(struct hostent* host , struct ares_addrttl *ttls = 0, int nttl = 0)
 {
