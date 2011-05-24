@@ -400,7 +400,7 @@ void
 LocalManager::initCCom(int port, char *addr, int sport)
 {
   bool found;
-  struct in_addr cluster_addr;  // ip addr of the cluster interface
+  sockaddr_storage cluster_addr;  // ip addr of the cluster interface
   char *clusterAddrStr;         // cluster ip addr as a String
   char *intrName;               // Name of the interface we are to use
   char hostname[1024];          // hostname of this machine
@@ -463,7 +463,7 @@ LocalManager::initMgmtProcessServer()
 {
   char fpath[1024];
   int servlen, one = 1;
-  struct sockaddr_un serv_addr;
+  sockaddr_storage_un serv_addr;
 
 #if TS_HAS_WCCP
   if (wccp_cache.isConfigured()) {
@@ -485,7 +485,7 @@ LocalManager::initMgmtProcessServer()
   serv_addr.sun_family = AF_UNIX;
   ink_strncpy(serv_addr.sun_path, fpath, sizeof(serv_addr.sun_path));
 #if defined(darwin) || defined(freebsd)
-  servlen = sizeof(struct sockaddr_un);
+  servlen = sizeof(sockaddr_storage_un);
 #else
   servlen = strlen(serv_addr.sun_path) + sizeof(serv_addr.sun_family);
 #endif
@@ -493,7 +493,7 @@ LocalManager::initMgmtProcessServer()
     mgmt_fatal(stderr, "[LocalManager::initMgmtProcessServer] Unable to set socket options.\n");
   }
 
-  if ((bind(process_server_sockfd, (struct sockaddr *) &serv_addr, servlen)) < 0) {
+  if ((bind(process_server_sockfd, (sockaddr_storage *) &serv_addr, servlen)) < 0) {
     mgmt_fatal(stderr, "[LocalManager::initMgmtProcessServer] Unable to bind '%s' socket exiting\n", fpath);
   }
 
@@ -514,7 +514,7 @@ LocalManager::pollMgmtProcessServer()
 {
   int num;
   struct timeval timeout;
-  struct sockaddr_in clientAddr;
+  sockaddr_storage clientAddr;
   fd_set fdlist;
 #if TS_HAS_WCCP
   int wccp_fd = wccp_cache.getSocket();
@@ -552,7 +552,7 @@ LocalManager::pollMgmtProcessServer()
       if (FD_ISSET(process_server_sockfd, &fdlist)) {   /* New connection */
         int clientLen = sizeof(clientAddr);
         int new_sockfd = mgmt_accept(process_server_sockfd,
-                                     (struct sockaddr *) &clientAddr,
+                                     (sockaddr_storage *) &clientAddr,
                                      &clientLen);
         MgmtMessageHdr *mh;
         int data_len;

@@ -15,7 +15,8 @@
 #  limitations under the License.
 
 AM_CPPFLAGS = \
-  -I$(top_srcdir)/proxy/hdrs
+  -I$(top_srcdir)/proxy/hdrs \
+  -I$(top_srcdir)/lib
 
 MGMT_DEFS = @MGMT_DEFS@
 DEFS += $(MGMT_DEFS)
@@ -23,8 +24,6 @@ DEFS += $(MGMT_DEFS)
 noinst_LIBRARIES = libpreparse.a
 
 libpreparse_a_SOURCES = \
-  IPRange.cc \
-  IPRange.h \
   RemapReadConfig.cc \
   SocksParser.cc \
   StoreReadConfig.cc

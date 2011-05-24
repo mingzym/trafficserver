@@ -119,7 +119,7 @@ main(int argc, char *argv[])
   int req_rate = 0;
   unsigned short seed16v[3];
   struct sigaction act;
-  // struct sockaddr_in target_addr;
+  // sockaddr_storage target_addr;
   struct timeval rand_time;
   signal(SIGPIPE, SIG_IGN);
   /*

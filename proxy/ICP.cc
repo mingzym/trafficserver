@@ -594,7 +594,7 @@ ICPPeerReadCont::PeerReadStateMachine(PeerReadData * s, Event * e)
         ink_assert(s->_peer->readAction == NULL);
         Action *a = s->_peer->RecvFrom_re(this, this, buf,
                                           buf->write_avail() - 1,
-                                          (struct sockaddr *)
+                                          (sockaddr_storage *)
                                           &s->_peer->fromaddr,
                                           &s->_peer->fromaddrlen);
         if (!a) {
@@ -688,7 +688,7 @@ ICPPeerReadCont::PeerReadStateMachine(PeerReadData * s, Event * e)
         }
         // Validate receiver and convert the received sockaddr
         //   to internal sockaddr format.
-        struct sockaddr_in from;
+        sockaddr_storage from;
         if (!s->_peer->ExtToIntRecvSockAddr(&s->_peer->fromaddr, &from)) {
           int status;
           ICPConfigData *cfg = _ICPpr->GetConfig()->globalConfig();
@@ -1324,7 +1324,7 @@ ICPRequestCont::ICPStateMachine(int event, void *d)
           npending_actions++;
           Action *a = P->SendMsg_re(this,
                                     P,
-                                    &_sendMsgHdr, (struct sockaddr_in *) 0);
+                                    &_sendMsgHdr, (sockaddr_storage *) 0);
           if (!a) {
             a = ACTION_IO_ERROR;
           }
@@ -1335,7 +1335,7 @@ ICPRequestCont::ICPStateMachine(int event, void *d)
               }
               (*pendingActions) (npending_actions) = a;
             }
-            P->LogSendMsg(&_ICPmsg, (struct sockaddr_in *) 0);  // log as send query
+            P->LogSendMsg(&_ICPmsg, (sockaddr_storage *) 0);  // log as send query
             Debug("icp", "[ICP_QUEUE_REQUEST] Id=%d send query to [%s:%d]",
                   _sequence_number, inet_ntoa(*P->GetIP()), P->GetPort());
           } else {

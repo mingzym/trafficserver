@@ -161,8 +161,8 @@ RecPipeCreate(const char *base_path, const char *name)
 
   RecHandle listenfd;
   RecHandle acceptfd;
-  struct sockaddr_un servaddr;
-  struct sockaddr_un cliaddr;
+  sockaddr_storage_un servaddr;
+  sockaddr_storage_un cliaddr;
   int servaddr_len;
   socklen_t cliaddr_len;
 
@@ -207,7 +207,7 @@ RecPipeCreate(const char *base_path, const char *name)
   }
 
   servaddr_len = sizeof(servaddr.sun_family) + strlen(servaddr.sun_path);
-  if ((bind(listenfd, (struct sockaddr *) &servaddr, servaddr_len)) < 0) {
+  if ((bind(listenfd, (sockaddr_storage *) &servaddr, servaddr_len)) < 0) {
     RecLog(DL_Warning, "[RecPipeCreate] bind error\n");
     return REC_HANDLE_INVALID;
   }
@@ -218,7 +218,7 @@ RecPipeCreate(const char *base_path, const char *name)
   }
   // block until we get a connection from the other side
   cliaddr_len = sizeof(cliaddr);
-  if ((acceptfd = accept(listenfd, (struct sockaddr *) &cliaddr,
+  if ((acceptfd = accept(listenfd, (sockaddr_storage *) &cliaddr,
                          &cliaddr_len)) < 0) {
     return REC_HANDLE_INVALID;
   }
@@ -237,7 +237,7 @@ RecPipeConnect(const char *base_path, const char *name)
 {
 
   RecHandle sockfd;
-  struct sockaddr_un servaddr;
+  sockaddr_storage_un servaddr;
   int servaddr_len;
 
   // construct a path/filename for the pipe
@@ -265,7 +265,7 @@ RecPipeConnect(const char *base_path, const char *name)
     return REC_HANDLE_INVALID;
   }
   // blocking connect
-  if ((connect(sockfd, (struct sockaddr *) &servaddr, servaddr_len)) < 0) {
+  if ((connect(sockfd, (sockaddr_storage *) &servaddr, servaddr_len)) < 0) {
     RecLog(DL_Warning, "[RecPipeConnect] connect error\n");
     return REC_HANDLE_INVALID;
   }

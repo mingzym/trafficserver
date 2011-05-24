@@ -64,7 +64,7 @@ create_client()
   if (!ele)
     return NULL;
 
-  ele->adr = (struct sockaddr *) xmalloc(sizeof(struct sockaddr));
+  ele->adr = (sockaddr_storage *) xmalloc(sizeof(sockaddr_storage));
   if (!ele->adr)
     return NULL;
 
@@ -147,7 +147,7 @@ ts_ctrl_main(void *arg)
   InkHashTableIteratorState con_state;  // used to iterate through hash table
   int fds_ready;                // stores return value for select
   struct timeval timeout;
-  int addr_len = (sizeof(struct sockaddr));
+  int addr_len = (sizeof(sockaddr_storage));
 
   // loops until TM dies; waits for and processes requests from clients
   while (1) {

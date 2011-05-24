@@ -1135,7 +1135,7 @@ HttpConfig::startup()
 
   if (c.incoming_ip_to_bind) {
     Debug("ip_binding", "incoming_ip_to_bind: %s", c.incoming_ip_to_bind);
-    c.incoming_ip_to_bind_saddr = inet_addr(c.incoming_ip_to_bind);
+    ink_int_pton(&c.incoming_ip_to_bind_saddr, c.incoming_ip_to_bind);
   }
 
   RecGetRecordString_Xmalloc("proxy.local.outgoing_ip_to_bind", &(c.outgoing_ip_to_bind));

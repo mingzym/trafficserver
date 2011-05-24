@@ -60,7 +60,7 @@ drainIncomingChannel(void *arg)
   char message[61440];
   fd_set fdlist;
   void *ret = arg;
-  struct sockaddr_in cli_addr;
+  sockaddr_storage cli_addr;
 
   // Fix for INKqa07688: There was a problem at Genuity where if you
   // pulled out the cable on the cluser interface (or just ifconfig'd
@@ -150,7 +150,7 @@ drainIncomingChannel(void *arg)
     } else if (FD_ISSET(lmgmt->ccom->reliable_server_fd, &fdlist)) {
       /* Reliable(TCP) request */
       int clilen = sizeof(cli_addr);
-      int req_fd = mgmt_accept(lmgmt->ccom->reliable_server_fd, (struct sockaddr *) &cli_addr, &clilen);
+      int req_fd = mgmt_accept(lmgmt->ccom->reliable_server_fd, (sockaddr_storage *) &cli_addr, &clilen);
       if (req_fd < 0) {
         mgmt_elog(stderr, "[drainIncomingChannel] error accepting " "reliable connection\n");
         continue;
@@ -1571,7 +1571,7 @@ void
 ClusterCom::establishChannels()
 {
   int one = 1;
-  struct sockaddr_in serv_addr;
+  sockaddr_storage serv_addr;
 
   if (cluster_type != NO_CLUSTER) {
     establishBroadcastChannel();
@@ -1597,7 +1597,7 @@ ClusterCom::establishChannels()
       serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
       serv_addr.sin_port = htons(reliable_server_port);
 
-      if ((bind(reliable_server_fd, (struct sockaddr *) &serv_addr, sizeof(serv_addr))) < 0) {
+      if ((bind(reliable_server_fd, (sockaddr_storage *) &serv_addr, sizeof(serv_addr))) < 0) {
         mgmt_fatal("[ClusterCom::establishChannels] Unable to bind socket (port:%d)\n", reliable_server_port);
       }
 
@@ -1635,13 +1635,13 @@ ClusterCom::establishBroadcastChannel(void)
   }
   // To fix INKqa04541, we need to explicitly bind the
   // multicast socket to the cluster interface.
-  struct sockaddr_in cluster_intr_addr;
+  sockaddr_storage cluster_intr_addr;
   memset(&cluster_intr_addr, 0, sizeof(cluster_intr_addr));
   cluster_intr_addr.sin_family = AF_INET;
   cluster_intr_addr.sin_addr.s_addr = our_ip;
   cluster_intr_addr.sin_port = htons(mc_port);
 
-  if (bind(broadcast_fd, (struct sockaddr *) &cluster_intr_addr, sizeof(cluster_intr_addr)) < 0) {
+  if (bind(broadcast_fd, (sockaddr_storage *) &cluster_intr_addr, sizeof(cluster_intr_addr)) < 0) {
     mgmt_fatal("[ClusterCom::establishBroadcastChannel] Unable to bind to socket, port %d\n", mc_port);
   }
 #endif // !_WIN32
@@ -1672,8 +1672,8 @@ ClusterCom::establishBroadcastChannel(void)
   DWORD ttl = mc_ttl;
   BOOL loop = FALSE;
 
-  if (WSAJoinLeaf(broadcast_fd, (struct sockaddr *) &broadcast_addr,
-                  sizeof(struct sockaddr_in), NULL, NULL, NULL, NULL, JL_SENDER_ONLY) == INVALID_SOCKET) {
+  if (WSAJoinLeaf(broadcast_fd, (sockaddr_storage *) &broadcast_addr,
+                  sizeof(sockaddr_storage), NULL, NULL, NULL, NULL, JL_SENDER_ONLY) == INVALID_SOCKET) {
     mgmt_fatal("[ClusterCom::establishBroadcastChannel] Unable to join group\n");
   }
 
@@ -1760,7 +1760,7 @@ ClusterCom::establishReceiveChannel(int fatal_on_error)
 #endif
   receive_addr.sin_port = htons(mc_port);
 
-  if (bind(receive_fd, (struct sockaddr *) &receive_addr, sizeof(receive_addr)) < 0) {
+  if (bind(receive_fd, (sockaddr_storage *) &receive_addr, sizeof(receive_addr)) < 0) {
     if (!fatal_on_error) {
       close(receive_fd);
       receive_fd = -1;
@@ -1785,12 +1785,12 @@ ClusterCom::establishReceiveChannel(int fatal_on_error)
     mgmt_fatal("[ClusterCom::establishReceiveChannel] Can't add ourselves to multicast group %s\n", mc_group);
   }
 #else
-  struct sockaddr_in mc_sa;
+  sockaddr_storage mc_sa;
   memset(&mc_sa, 0, sizeof(mc_sa));
   mc_sa.sin_family = AF_INET;
   mc_sa.sin_addr.s_addr = inet_addr(mc_group);
   mc_sa.sin_port = htons(mc_port);
-  if (WSAJoinLeaf(receive_fd, (struct sockaddr *) &mc_sa,
+  if (WSAJoinLeaf(receive_fd, (sockaddr_storage *) &mc_sa,
                   sizeof(mc_sa), NULL, NULL, NULL, NULL, JL_RECEIVER_ONLY) == INVALID_SOCKET) {
     if (!fatal_on_error) {
       close(receive_fd);
@@ -1815,7 +1815,7 @@ ClusterCom::establishReceiveChannel(int fatal_on_error)
 bool
 ClusterCom::sendOutgoingMessage(char *buf, int len)
 {
-  if (mgmt_sendto(broadcast_fd, buf, len, 0, (struct sockaddr *) &broadcast_addr, sizeof(broadcast_addr)) < 0) {
+  if (mgmt_sendto(broadcast_fd, buf, len, 0, (sockaddr_storage *) &broadcast_addr, sizeof(broadcast_addr)) < 0) {
     mgmt_elog("[ClusterCom::sendOutgoingMessage] Message send failed\n");
     return false;
   }
@@ -1907,7 +1907,7 @@ ClusterCom::rl_sendReliableMessage(unsigned long addr, const char *buf, int len)
 {
   int fd, cport;
   char string_addr[80];
-  struct sockaddr_in serv_addr;
+  sockaddr_storage serv_addr;
   struct in_addr address;
   InkHashTableValue hash_value;
 
@@ -1937,7 +1937,7 @@ ClusterCom::rl_sendReliableMessage(unsigned long addr, const char *buf, int len)
   }
 #endif
 
-  if (connect(fd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
+  if (connect(fd, (sockaddr_storage *) &serv_addr, sizeof(serv_addr)) < 0) {
     mgmt_elog("[ClusterCom::rl_sendReliableMessage] Unable to connect to peer\n");
     close_socket(fd);
     return false;
@@ -1962,7 +1962,7 @@ ClusterCom::sendReliableMessage(unsigned long addr, char *buf, int len, char *re
 {
   int fd, cport;
   char string_addr[80];
-  struct sockaddr_in serv_addr;
+  sockaddr_storage serv_addr;
   struct in_addr address;
   InkHashTableValue hash_value;
 
@@ -2002,7 +2002,7 @@ ClusterCom::sendReliableMessage(unsigned long addr, char *buf, int len, char *re
   }
 #endif
 
-  if (connect(fd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
+  if (connect(fd, (sockaddr_storage *) &serv_addr, sizeof(serv_addr)) < 0) {
     mgmt_elog("[ClusterCom::sendReliableMessage] Unable to connect to peer\n");
     if (take_lock) {
       ink_mutex_release(&mutex);
@@ -2048,7 +2048,7 @@ ClusterCom::sendReliableMessageReadTillClose(unsigned long addr, char *buf, int 
 {
   int fd, cport, res;
   char string_addr[80], tmp_reply[1024];
-  struct sockaddr_in serv_addr;
+  sockaddr_storage serv_addr;
   struct in_addr address;
   InkHashTableValue hash_value;
 
@@ -2080,7 +2080,7 @@ ClusterCom::sendReliableMessageReadTillClose(unsigned long addr, char *buf, int 
   }
 #endif
 
-  if (connect(fd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
+  if (connect(fd, (sockaddr_storage *) &serv_addr, sizeof(serv_addr)) < 0) {
     mgmt_elog("[ClusterCom::sendReliableMessageReadTillClose] Unable to connect\n");
     ink_mutex_release(&mutex);
     close_socket(fd);
@@ -2129,7 +2129,7 @@ ClusterCom::receiveIncomingMessage(char *buf, int max)
 {
   int nbytes = 0, addr_len = sizeof(receive_addr);
 
-  if ((nbytes = recvfrom(receive_fd, buf, max, 0, (struct sockaddr *) &receive_addr, (socklen_t *) & addr_len)) < 0) {
+  if ((nbytes = recvfrom(receive_fd, buf, max, 0, (sockaddr_storage *) &receive_addr, (socklen_t *) & addr_len)) < 0) {
     mgmt_elog(stderr, "[ClusterCom::receiveIncomingMessage] Receive failed\n");
   }
   return nbytes;

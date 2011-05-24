@@ -180,19 +180,6 @@
 } while (0)
 #endif
 
-union ink_res_sockaddr_union {
-        struct sockaddr_in      sin;
-#ifdef IN6ADDR_ANY_INIT
-        struct sockaddr_in6     sin6;
-#endif
-#ifdef ISC_ALIGN64
-        int64_t                 __align64;      /*%< 64bit alignment */
-#else
-        int32_t                 __align32;      /*%< 32bit alignment */
-#endif
-        char                    __space[128];   /*%< max size */
-};
-
 struct __ink_res_state {
   int     retrans;                /*%< retransmission time interval */
   int     retry;                  /*%< number of times to retransmit */
@@ -202,8 +189,8 @@ struct __ink_res_state {
   u_long  options;                /*%< option flags - see below. */
 #endif
   int     nscount;                /*%< number of name servers */
-  union ink_res_sockaddr_union nsaddr_list[INK_MAXNS];     /*%< address of name server */
-#define nsaddr  nsaddr_list[0]          /*%< for backward compatibility */
+  sockaddr_storage nsaddr_list[INK_MAXNS];     /*%< address of name server */
+// #define nsaddr  nsaddr_list[0]          /*%< for backward compatibility */
   u_short id;                     /*%< current message id */
   char    *dnsrch[MAXDNSRCH+1];   /*%< components of domain to search */
   char    defdname[256];          /*%< default domain (deprecated) */
@@ -221,24 +208,11 @@ struct __ink_res_state {
   int     _vcsock;                /*%< PRIVATE: for res_send VC i/o */
   u_int   _flags;                 /*%< PRIVATE: see below */
   u_int   _pad;                   /*%< make _u 64 bit aligned */
-  union {
-    /* On an 32-bit arch this means 512b total. */
-    char    pad[72 - 4*sizeof (int) - 2*sizeof (void *)];
-    struct {
-      u_int16_t               nscount;
-      u_int16_t               nstimes[INK_MAXNS]; /*%< ms. */
-      struct __ink_res_state_ext *ext;    /*%< extention for IPv6 */
-    } _ext;
-  } _u;
+  u_int16_t              _nstimes[INK_MAXNS]; /*%< ms. */
 };
 typedef __ink_res_state *ink_res_state;
 
-struct __ink_res_state_ext {
-  union ink_res_sockaddr_union nsaddrs[INK_MAXNS];
-};
-
-
-int ink_res_init(ink_res_state, const unsigned int *pHostList, const int *pPort = NULL, const char *pDefDomain = NULL,
+int ink_res_init(ink_res_state, sockaddr_storage const* pHostList, const int *pPort = NULL, const char *pDefDomain = NULL,
                  const char *pSearchList = NULL, const char *pResolvConf = NULL);
 int ink_res_mkquery(ink_res_state, int, const char *, int, int,
                     const unsigned char *, int, const unsigned char *, unsigned char *, int);

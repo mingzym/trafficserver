@@ -46,11 +46,6 @@
 #include "ink_mutex.h"
 #include "MgmtHashTable.h"
 
-extern "C"
-{
-  struct sockaddr_in;
-}
-
 // DG: Added NO_THR state for init in compile warning
 enum UIthr_t
 {
@@ -68,7 +63,7 @@ struct serviceThr_t
   UIthr_t type;
   bool waitingForJoin;
   bool alreadyShutdown;
-  struct sockaddr_in *clientInfo;
+  sockaddr_storage *clientInfo;
 #ifdef MGMT_WEB_TUNE
   WebTune *timing;
   int xactNumber;

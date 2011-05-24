@@ -24,9 +24,7 @@ AM_CPPFLAGS = \
   -I$(top_srcdir)/mgmt/api/include \
   -I$(top_srcdir)/mgmt/cluster \
   -I$(top_srcdir)/mgmt/web2 \
-  -I$(top_srcdir)/lib/tsconfig \
   -I$(top_srcdir)/proxy \
-  -I$(top_srcdir)/lib/records \
   -I$(top_srcdir)/lib
 
 MGMT_DEFS = @MGMT_DEFS@
@@ -45,8 +43,6 @@ libutils_lm_a_SOURCES = \
   EnvBlock.h \
   ExpandingArray.cc \
   ExpandingArray.h \
-  IpLookup.cc \
-  IpLookup.h \
   MgmtSchema.cc \
   MgmtSchema.h \
   MgmtUtils.cc \
@@ -57,8 +53,6 @@ libutils_lm_a_SOURCES = \
   XmlUtils.h
 
 libutils_p_a_SOURCES = \
-  IpLookup.cc \
-  IpLookup.h \
   MgmtUtils.cc \
   MgmtUtils.h \
   XmlUtils.cc \

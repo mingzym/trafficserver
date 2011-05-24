@@ -46,9 +46,9 @@ LoadGenerator::initialize_stats()
 
 /* Take the hostname and port and construct a sockaddr_in* */
 int
-mksockaddr_in(const char *host, char *service, struct sockaddr_in *sin)
+mksockaddr_in(const char *host, char *service, sockaddr_storage *sin)
 {
-  memset(sin, 0, sizeof(struct sockaddr_in));
+  memset(sin, 0, sizeof(sockaddr_storage));
 
   sin->sin_family = AF_INET;
   if (isdigit(host[0]))
@@ -162,7 +162,7 @@ Only applicable for synthetic load */
 
 void
 LoadGenerator::generate_origin_server_target(char *origin_server_str,   /* Return value */
-                                             struct sockaddr_in **target        /* Return value */
+                                             sockaddr_storage **target        /* Return value */
   )
 {
   int origin_server_num = 0;
@@ -183,7 +183,7 @@ LoadGenerator::generate_origin_server_target(char *origin_server_str,   /* Retur
 #ifdef _PLUG_IN
 /* setup a sockaddr_in for given host and port for connection */
 void
-LoadGenerator::generate_dynamic_origin_server_target(char *hostname, char *portname, struct sockaddr_in **target        /* Return value */
+LoadGenerator::generate_dynamic_origin_server_target(char *hostname, char *portname, sockaddr_storage **target        /* Return value */
   )
 {
   if (mksockaddr_in(hostname, portname, *target) < 0) {
@@ -196,7 +196,7 @@ LoadGenerator::generate_dynamic_origin_server_target(char *hostname, char *portn
 /* Create synthetic request */
 void
 LoadGenerator::create_synthetic_request(char *req_string,       /* Return request */
-                                        void **req_id, long *bytes_requested_p, struct sockaddr_in **target)
+                                        void **req_id, long *bytes_requested_p, sockaddr_storage **target)
 {
   char size_str[MAX_SIZESTR_SIZE],
     serial_number_str[MAX_SERIALNUMBERSTR_SIZE],
@@ -396,7 +396,7 @@ LoadGenerator::create_request_from_logfile(char *req_string,    /* Return reques
 
 void
 LoadGenerator::generate_new_request(char *req_string, void **req_id,
-                                    long *bytes_requested_p, struct sockaddr_in **target)
+                                    long *bytes_requested_p, sockaddr_storage **target)
 {
 
   if (synthetic) {

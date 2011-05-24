@@ -198,7 +198,7 @@ ProcessManager::initLMConnection()
 
 #ifndef _WIN32
   int servlen;
-  struct sockaddr_un serv_addr;
+  sockaddr_storage_un serv_addr;
 
   /* Setup Connection to LocalManager */
   memset((char *) &serv_addr, 0, sizeof(serv_addr));
@@ -219,7 +219,7 @@ ProcessManager::initLMConnection()
     mgmt_fatal(stderr, "[ProcessManager::initLMConnection] Unable to set close-on-exec\n");
   }
 
-  if ((connect(local_manager_sockfd, (struct sockaddr *) &serv_addr, servlen)) < 0) {
+  if ((connect(local_manager_sockfd, (sockaddr_storage *) &serv_addr, servlen)) < 0) {
     mgmt_fatal(stderr, "[ProcessManager::initLMConnection] Connect failed\n");
   }
 

@@ -154,7 +154,7 @@ MachineStatusSM::MachineStatusSMEvent(Event * e, void *d)
         MUTEX_TRY_LOCK(lock, status_callouts[n].mutex, et);
         if (lock) {
           int mi;
-          unsigned int my_ipaddr = (this_cluster_machine())->ip;
+          sockaddr_storage const* my_ipaddr = &this_cluster_machine()->ip;
           ClusterConfiguration *cc;
 
           TSNodeHandle_t nh;
@@ -162,12 +162,16 @@ MachineStatusSM::MachineStatusSMEvent(Event * e, void *d)
           cc = this_cluster()->current_configuration();
           if (cc) {
             for (mi = 0; mi < cc->n_machines; ++mi) {
-              if (cc->machines[mi]->ip != my_ipaddr) {
+              if (0 != ink_inet_cmp(&cc->machines[mi]->ip, my_ipaddr)) {
+                char buff[INET6_ADDRSTRLEN];
                 nh = IP_TO_NODE_HANDLE(cc->machines[mi]->ip);
                 status_callouts[n].func(&nh, NODE_ONLINE);
 
                 Debug("cluster_api",
-                      "initial callout: n %d ([%u.%u.%u.%u], %d)", n, DOT_SEPARATED(cc->machines[mi]->ip), NODE_ONLINE);
+                      "initial callout: n %d ([%s], %d)", n,
+                  ink_inet_ntop(&cc->machines[mi]->ip, buff, sizeof buff),
+                  NODE_ONLINE
+                );
               }
             }
           }

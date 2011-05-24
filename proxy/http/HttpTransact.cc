@@ -5207,7 +5207,7 @@ HttpTransact::add_client_ip_to_outgoing_request(State* s, HTTPHdr* request)
     return;
 
   // Always prepare the IP string.
-  if (ink_inet_ntop((struct sockaddr *)&s->client_info.addr, ip_string + 1, sizeof(ip_string) - 1) != NULL) {
+  if (ink_inet_ntop((sockaddr_storage *)&s->client_info.addr, ip_string + 1, sizeof(ip_string) - 1) != NULL) {
     ip_string[0] = ' ';         // Leading space always, in case we need to concatenate this IP
     ip_string_size += strlen(ip_string);
   } else {

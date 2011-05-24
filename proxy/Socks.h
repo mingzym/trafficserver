@@ -113,35 +113,6 @@ int socks5BasicAuthHandler(int event, unsigned char *p, void (**)(void));
 int socks5PasswdAuthHandler(int event, unsigned char *p, void (**)(void));
 int socks5ServerAuthHandler(int event, unsigned char *p, void (**)(void));
 
-
-struct SocksAddrType
-{
-  unsigned char type;
-  union
-  {
-    //mostly it is ipv4. in other cases we will xalloc().
-    unsigned char ipv4[4];
-    unsigned char *buf;
-  } addr;
-
-  void reset()
-  {
-    if (type != SOCKS_ATYPE_IPV4 && addr.buf) {
-      xfree(addr.buf);
-    }
-    addr.buf = 0;
-    type = SOCKS_ATYPE_NONE;
-  }
-
-  SocksAddrType()
-:  type(SOCKS_ATYPE_NONE) {
-    addr.buf = 0;
-  };
-  ~SocksAddrType() {
-    reset();
-  }
-};
-
 class UnixNetVConnection;
 typedef UnixNetVConnection SocksNetVC;
 

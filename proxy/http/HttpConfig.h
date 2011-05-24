@@ -56,7 +56,7 @@
 #define MgmtFloat RecFloat
 
 
-#include "P_RecProcess.h"
+#include <records/P_RecProcess.h>
 
 
 /* Some defines that might be candidates for configurable settings later.
@@ -598,7 +598,7 @@ public:
   int proxy_hostname_len;
 
   char *incoming_ip_to_bind;
-  unsigned int incoming_ip_to_bind_saddr;
+  sockaddr_storage incoming_ip_to_bind_saddr;
 
   char *outgoing_ip_to_bind;
 
@@ -903,7 +903,7 @@ HttpConfigParams::HttpConfigParams()
   : proxy_hostname(0),
     proxy_hostname_len(0),
     incoming_ip_to_bind(0),
-    incoming_ip_to_bind_saddr(0),
+//    incoming_ip_to_bind_saddr(0),
     outgoing_ip_to_bind(0),
     server_max_connections(0),
     origin_min_keep_alive_connections(0),
@@ -982,7 +982,9 @@ HttpConfigParams::HttpConfigParams()
     ignore_accept_encoding_mismatch(0),
     ignore_accept_charset_mismatch(0),
     normalize_ae_gzip(1)
-{ }
+{
+  ink_inet_init(incoming_ip_to_bind_saddr);
+}
 
 inline
 HttpConfigParams::~HttpConfigParams()

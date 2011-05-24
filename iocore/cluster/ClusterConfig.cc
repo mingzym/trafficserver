@@ -106,11 +106,8 @@ ClusterAccept::ClusterAcceptEvent(int event, void *data)
 	opt.recv_bufsize = socket_recv_bufsize;
 	opt.send_bufsize = socket_send_bufsize;
 	opt.etype = ET_CLUSTER;
-	opt.port = cluster_port;
 	opt.domain = AF_INET;
-        accept_action = netProcessor.main_accept(this, NO_FD,
-                                                 NULL, NULL,
-                                                 false, false, opt);
+        accept_action = netProcessor.main_accept(this, NO_FD, cluster_port, opt);
         if (!accept_action) {
           Warning("Unable to accept cluster connections on port: %d", cluster_port);
         } else {
@@ -135,20 +132,22 @@ ClusterAccept::ClusterAcceptEvent(int event, void *data)
 int
 ClusterAccept::ClusterAcceptMachine(NetVConnection * NetVC)
 {
+  char buff[INET6_ADDRSTRLEN];
   // Validate remote IP address.
-  unsigned int remote_ip = NetVC->get_remote_ip();
+  sockaddr_storage const* remote_ip = NetVC->get_remote_addr();
+//  unsigned int remote_ip = NetVC->get_remote_ip();
   MachineList *mc = the_cluster_machines_config();
 
-  if (mc && !mc->find(remote_ip)) {
+  if (mc && !mc->findByAddr(remote_ip)) {
     Note("Illegal cluster connection from %u.%u.%u.%u", DOT_SEPARATED(remote_ip));
     NetVC->do_io(VIO::CLOSE);
     return 0;
   }
 
-  Debug(CL_NOTE, "Accepting machine %u.%u.%u.%u", DOT_SEPARATED(remote_ip));
+  Debug(CL_NOTE, "Accepting machine %s", ink_inet_ntop(remote_ip, buff, sizeof buff));
   ClusterHandler *ch = NEW(new ClusterHandler);
   ch->machine = NEW(new ClusterMachine(NULL, remote_ip));
-  ch->ip = remote_ip;
+  ch->ip = ch->;
   ch->net_vc = NetVC;
   eventProcessor.schedule_imm(ch, ET_CLUSTER);
   return 1;

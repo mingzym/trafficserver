@@ -592,7 +592,7 @@ get_interface_mtu(int sock_fd, struct ifreq *ifr)
 #endif
 
 bool
-mgmt_getAddrForIntr(char *intrName, struct in_addr * addr, int *mtu)
+mgmt_getAddrForIntr(char *intrName, sockaddr_storage * addr, int *mtu)
 {
   bool found = false;
 
@@ -602,7 +602,6 @@ mgmt_getAddrForIntr(char *intrName, struct in_addr * addr, int *mtu)
 #if !defined(_WIN32)
 
   int fakeSocket;               // a temporary socket to pass to ioctl
-  struct sockaddr_in *tmp;      // a tmp ptr for addresses
   struct ifconf ifc;            // ifconf information
   char *ifbuf;                  // ifconf buffer
   struct ifreq *ifr, *ifend;    // pointer to individual inferface info
@@ -652,8 +651,7 @@ mgmt_getAddrForIntr(char *intrName, struct in_addr * addr, int *mtu)
       } else {
         // Only look at the address if it an internet address
         if (ifr->ifr_ifru.ifru_addr.sa_family == AF_INET) {
-          tmp = (struct sockaddr_in *) &ifr->ifr_ifru.ifru_addr;
-          *addr = tmp->sin_addr;
+          ink_inet_test_copy(addr, ink_inet_ss_cast(&ifr->ifr_ifru.ifru_addr));
           found = true;
 
           if (mtu)

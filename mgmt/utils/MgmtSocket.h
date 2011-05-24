@@ -59,7 +59,7 @@ mgmt_transient_error()
 //-------------------------------------------------------------------------
 
 inline int
-mgmt_accept(int s, struct sockaddr *addr, int *addrlen)
+mgmt_accept(int s, sockaddr_storage *addr, int *addrlen)
 {
   int r, retries;
   for (retries = 0; retries < MGMT_MAX_TRANSIENT_ERRORS; retries++) {
@@ -165,7 +165,7 @@ mgmt_select(int nfds, fd_set * readfds, fd_set * writefds, fd_set * errorfds, st
 //-------------------------------------------------------------------------
 
 inline int
-mgmt_sendto(int fd, void *buf, int len, int flags, struct sockaddr *to, int tolen)
+mgmt_sendto(int fd, void *buf, int len, int flags, sockaddr_storage *to, int tolen)
 {
   int r, retries;
   for (retries = 0; retries < MGMT_MAX_TRANSIENT_ERRORS; retries++) {

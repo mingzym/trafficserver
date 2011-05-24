@@ -40,7 +40,7 @@
 typedef struct
 {
   SocketInfo sock_info;
-  struct sockaddr *adr;
+  sockaddr_storage *adr;
 } ClientT;
 
 ClientT *create_client();

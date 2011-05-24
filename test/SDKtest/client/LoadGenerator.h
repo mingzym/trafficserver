@@ -70,7 +70,7 @@ struct LoadGenerator
   char *target_host;
   char *target_port;
   char *document_base;
-  struct sockaddr_in target_addr[MAX_ORIGIN_SERVERS];
+  sockaddr_storage target_addr[MAX_ORIGIN_SERVERS];
 
   int num_sizes;                /* Number of sizes in the docsize distribution */
   long *sizes;                  /* actual sizes */
@@ -93,11 +93,11 @@ struct LoadGenerator
   /*Number of docs for each server */
   void generate_size_str(char *size_str, long *size_requested_p);
   void generate_serial_number_str(char *serial_number_str);
-  void generate_origin_server_target(char *origin_server_str, struct sockaddr_in **target);
-  void create_synthetic_request(char *req_string, void **req_id, long *size_requested_p, struct sockaddr_in **target);
+  void generate_origin_server_target(char *origin_server_str, sockaddr_storage **target);
+  void create_synthetic_request(char *req_string, void **req_id, long *size_requested_p, sockaddr_storage **target);
   void create_request_from_logfile(char *req_string, long *size_requested_p);
-  void generate_new_request(char *req_string, void **req_id, long *size_requested_p, struct sockaddr_in **target);
-  void generate_dynamic_origin_server_target(char *hostname, char *portname, struct sockaddr_in **target);
+  void generate_new_request(char *req_string, void **req_id, long *size_requested_p, sockaddr_storage **target);
+  void generate_dynamic_origin_server_target(char *hostname, char *portname, sockaddr_storage **target);
   void print_stats();
   void initialize_stats();
   void initialize_targets();
@@ -123,7 +123,7 @@ struct LoadGenerator
                 char aorigin_server_names[][MAX_HOSTNAME_SIZE],
                 char *aorigin_server_ports[MAX_HOSTNAME_SIZE],
                 char *atarget_host, char *atarget_port, char *adocument_base,
-//    struct sockaddr_in atarget_addr[],
+//    sockaddr_storage atarget_addr[],
                 int anum_sizes, /* Number of sizes in the docsize distribution */
                 long *asizes,   /* actual sizes */
                 double *acumulative_size_prob,

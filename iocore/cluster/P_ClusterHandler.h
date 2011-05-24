@@ -425,8 +425,9 @@ struct ClusterHandler:public ClusterHandlerBase
 #endif
   NetVConnection *net_vc;
   EThread *thread;
-  unsigned int ip;
-  int port;
+  sockaddr_storage ip;
+//  unsigned int ip;
+//  int port;
   char *hostname;
   ClusterMachine *machine;
   int ifd;

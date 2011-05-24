@@ -19,13 +19,13 @@
 if STANDALONE_IOCORE
 AM_CPPFLAGS = \
   $(iocore_include_dirs) \
-  -I$(top_srcdir)/lib/records
+  -I$(top_srcdir)/lib
 
 ADD_SRC =
 else
 AM_CPPFLAGS = \
   $(iocore_include_dirs) \
-  -I$(top_srcdir)/lib/records \
+  -I$(top_srcdir)/lib \
   -I$(top_srcdir)/proxy \
   -I$(top_srcdir)/proxy/hdrs \
   -I$(top_srcdir)/proxy/http \

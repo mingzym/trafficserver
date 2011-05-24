@@ -58,7 +58,7 @@ Impl::~Impl() {
 
 int
 Impl::open(uint addr) {
-  struct sockaddr saddr;
+  sockaddr_storage saddr;
   sockaddr_in& in_addr = reinterpret_cast<sockaddr_in&>(saddr);
   int fd;
 
@@ -165,7 +165,7 @@ ts::Rv<int>
 Impl::handleMessage() {
   ts::Rv<int> zret;
   ssize_t n; // recv byte count.
-  struct sockaddr src_addr; // sender's address.
+  sockaddr_storage src_addr; // sender's address.
   msghdr recv_hdr;
   iovec recv_buffer;
   IpHeader ip_header;

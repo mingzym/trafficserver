@@ -176,8 +176,8 @@ public:
   int mc_ttl;
   char mc_group[MAX_MC_GROUP_LEN];
 
-  struct sockaddr_in broadcast_addr;
-  struct sockaddr_in receive_addr;
+  sockaddr_storage broadcast_addr;
+  sockaddr_storage receive_addr;
 
 };                              /* End class ClusterCom */
 

@@ -28,7 +28,7 @@ require 5.006;
 #
 # Check if the line has an INK* to TS* change requirement
 #
-# tsapi const struct sockaddr_storage *INKHttpTxnClientSockAddrGet(TSHttpTxn txnp);
+# tsapi const sockaddr_storage_storage *INKHttpTxnClientSockAddrGet(TSHttpTxn txnp);
 my %INK_EXCLUDES = (
   "INKSTAT_TYPE_INT64" => 1,
   "INKSTAT_TYPE_FLOAT" => 1,

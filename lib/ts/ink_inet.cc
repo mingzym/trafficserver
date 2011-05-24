@@ -163,34 +163,54 @@ ink_inet_addr(const char *s)
   return htonl((uint32_t) - 1);
 }
 
-const char *ink_inet_ntop(const struct sockaddr *addr, char *dst, size_t size)
-{
-  void *address = NULL;
+const char *ink_inet_ntop(
+  const sockaddr_storage *addr,
+  char *dst, size_t size
+) {
+  void const* ptr = NULL;
 
-  switch (addr->sa_family) {
+  switch (addr->ss_family) {
   case AF_INET:
-    address = &((struct sockaddr_in *)addr)->sin_addr;
+    ptr = &(ink_inet_ip4_cast(addr)->sin_addr);
     break;
   case AF_INET6:
-    address = &((struct sockaddr_in6 *)addr)->sin6_addr;
+    ptr = &(ink_inet_ip6_cast(addr)->sin6_addr);
+    break;
+  default:
+    snprintf(dst, size, "Bad address type: %d", addr->ss_family);
     break;
   }
 
-  return inet_ntop(addr->sa_family, address, dst, size);
+  return ptr ?
+    inet_ntop(addr->ss_family, ptr, dst, size)
+    : dst
+    ;
 }
 
-uint16_t ink_inet_port(const struct sockaddr *addr)
-{
-  uint16_t port = 0;
+const char *ink_inet_nptop(
+  const sockaddr_storage *addr,
+  char *dst, size_t size
+) {
+  char buff[INET6_ADDRSTRLEN];
+  snprintf(dst, size, "%s:%u",
+    ink_inet_ntop(addr, buff, sizeof(buff)),
+    ink_inet_get_port(addr)
+  );
+  return dst;
+}
 
-  switch (addr->sa_family) {
-  case AF_INET:
-    port = ntohs(((struct sockaddr_in *)addr)->sin_port);
-    break;
-  case AF_INET6:
-    port = ntohs(((struct sockaddr_in6 *)addr)->sin6_port);
-    break;
+int ink_inet_pton(char const* text, sockaddr_storage* ss) {
+  int zret = -1;
+  addrinfo hints; // [out]
+  addrinfo *ai; // [in]
+
+  memset(&hints, 0, sizeof(hints));
+  hints.ai_family = PF_UNSPEC;
+  hints.ai_flags = AI_NUMERICHOST|AI_PASSIVE;
+  if (0 == (zret = getaddrinfo(text, 0, &hints, &ai))) {
+    if (ink_inet_copy(*ss, *ink_inet_ss_cast(ai->ai_addr)))
+      zret = 0;
+    freeaddrinfo(ai);
   }
-
-  return port;
+  return zret;
 }

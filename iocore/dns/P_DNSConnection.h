@@ -60,14 +60,14 @@ struct DNSHandler;
 struct DNSConnection
 {
   int fd;
-  struct sockaddr_in sa;
+  sockaddr_storage sa;
   int num;
   LINK(DNSConnection, link);
   EventIO eio;
   InkRand generator;
   DNSHandler* handler;
 
-  int connect(unsigned int ip, int port,
+  int connect(sockaddr_storage const* target,
               bool non_blocking_connect = NON_BLOCKING_CONNECT,
               bool use_tcp = CONNECT_WITH_TCP, bool non_blocking = NON_BLOCKING, bool bind_random_port = BIND_ANY_PORT);
   int close();

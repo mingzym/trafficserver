@@ -94,8 +94,8 @@ LogSock::~LogSock()
 int
 LogSock::listen(int accept_port)
 {
-  struct sockaddr_in bind_addr;
-  int size = sizeof(struct sockaddr_in);
+  sockaddr_storage bind_addr;
+  int size = sizeof(sockaddr_storage);
   char this_host[MAXDNAME];
   int ret;
   SOCKET accept_sd;
@@ -197,8 +197,8 @@ int
 LogSock::accept()
 {
   int cid, connect_sd;
-  struct sockaddr_in connect_addr;
-  unsigned int size = sizeof(struct sockaddr_in);
+  sockaddr_storage connect_addr;
+  unsigned int size = sizeof(sockaddr_storage);
 
   if (!m_accept_connections || ct[0].sd < 0) {
     return LogSock::LS_ERROR_NO_CONNECTION;
@@ -247,9 +247,9 @@ int
 LogSock::connect(unsigned host_ip, int port)
 {
   int cid, connect_sd, ret;
-  struct sockaddr_in connect_addr;
+  sockaddr_storage connect_addr;
   memset(&connect_addr, 0, sizeof(connect_addr));
-  int size = sizeof(struct sockaddr_in);
+  int size = sizeof(sockaddr_storage);
 
   if (host_ip == 0 || port < 0) {
     Note("Invalid host IP or port number for connection");

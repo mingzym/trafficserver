@@ -60,11 +60,11 @@ transient_error()
 // Timing done in the connectionManager
 //
 TS_INLINE int
-SocketManager::accept(int s, struct sockaddr *addr, socklen_t *addrlen)
+SocketManager::accept(int s, sockaddr_storage* addr, socklen_t *addrlen)
 {
   int r;
   do {
-    r =::accept(s, addr, addrlen);
+    r =::accept(s, ink_inet_sa_cast(addr), addrlen);
     if (likely(r >= 0))
       break;
     r = -errno;
@@ -187,11 +187,11 @@ SocketManager::recv(int fd, void *buf, int size, int flags)
 }
 
 TS_INLINE int
-SocketManager::recvfrom(int fd, void *buf, int size, int flags, struct sockaddr *addr, socklen_t *addrlen)
+SocketManager::recvfrom(int fd, void *buf, int size, int flags, sockaddr_storage *addr, socklen_t *addrlen)
 {
   int r;
   do {
-    r =::recvfrom(fd, (char *) buf, size, flags, addr, addrlen);
+    r =::recvfrom(fd, (char *) buf, size, flags, ink_inet_sa_cast(addr), addrlen);
     if (unlikely(r < 0))
       r = -errno;
   } while (r == -EINTR);
@@ -254,11 +254,11 @@ SocketManager::send(int fd, void *buf, int size, int flags)
 }
 
 TS_INLINE int
-SocketManager::sendto(int fd, void *buf, int len, int flags, struct sockaddr *to, int tolen)
+SocketManager::sendto(int fd, void *buf, int len, int flags, sockaddr_storage *to, int tolen)
 {
   int r;
   do {
-    if (unlikely((r =::sendto(fd, (char *) buf, len, flags, to, tolen)) < 0))
+    if (unlikely((r =::sendto(fd, (char *) buf, len, flags, ink_inet_sa_cast(to), tolen)) < 0))
       r = -errno;
   } while (r == -EINTR);
   return r;
@@ -502,9 +502,9 @@ SocketManager::set_rcvbuf_size(int s, int bsz)
 }
 
 TS_INLINE int
-SocketManager::getsockname(int s, struct sockaddr *sa, socklen_t *sz)
+SocketManager::getsockname(int s, sockaddr_storage *sa, socklen_t *sz)
 {
-  return::getsockname(s, sa, sz);
+  return::getsockname(s, ink_inet_sa_cast(sa), sz);
 }
 
 TS_INLINE int

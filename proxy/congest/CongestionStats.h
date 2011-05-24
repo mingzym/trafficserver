@@ -33,7 +33,7 @@
 
 // the stat variables are defined in StatSystem.h, StatSystem.cc
 void register_congest_stats();
-#include "P_RecProcess.h"
+#include <records/P_RecProcess.h>
 extern RecRawStatBlock *congest_rsb;
 
 /* Instead of enumerating the stats in DynamicStats.h, each module needs

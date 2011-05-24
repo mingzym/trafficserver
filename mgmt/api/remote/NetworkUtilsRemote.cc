@@ -142,8 +142,8 @@ socket_test(int fd)
 TSError
 ts_connect()
 {
-  struct sockaddr_un client_sock;
-  struct sockaddr_un client_event_sock;
+  sockaddr_storage_un client_sock;
+  sockaddr_storage_un client_event_sock;
 
   int sockaddr_len;
 
@@ -167,7 +167,7 @@ ts_connect()
   sockaddr_len = sizeof(client_sock.sun_family) + strlen(client_sock.sun_path);
 #endif
   // connect call
-  if (connect(main_socket_fd, (struct sockaddr *) &client_sock, sockaddr_len) < 0) {
+  if (connect(main_socket_fd, (sockaddr_storage *) &client_sock, sockaddr_len) < 0) {
     //fprintf(stderr, "[connect] ERROR (main_socket_fd %d): %s\n", main_socket_fd, strerror(int(errno)));
     close(main_socket_fd);
     main_socket_fd = -1;
@@ -192,7 +192,7 @@ ts_connect()
   sockaddr_len = sizeof(client_event_sock.sun_family) + strlen(client_event_sock.sun_path);
 #endif
   // connect call
-  if (connect(event_socket_fd, (struct sockaddr *) &client_event_sock, sockaddr_len) < 0) {
+  if (connect(event_socket_fd, (sockaddr_storage *) &client_event_sock, sockaddr_len) < 0) {
     //fprintf(stderr, "[connect] ERROR (event_socket_fd %d): %s\n", event_socket_fd, strerror(int(errno)));
     close(event_socket_fd);
     close(main_socket_fd);

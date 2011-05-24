@@ -46,12 +46,11 @@ public:
   struct AcceptOptions {
     typedef AcceptOptions self; ///< Self reference type.
 
-    /// Port on which to listen.
-    /// 0 => don't care, which is useful if the socket is already bound.
-    int port;
     /// Should we use accept threads? If so, how many?
     int accept_threads;
     /// Communication domain (default: AF_INET)
+    /// @note Ignored if an explicit incoming address is set in the
+    /// the configuration (@c incoming_ip_to_bind).
     int domain;
     /// Event type to generate on accept.
     EventType etype;
@@ -60,6 +59,13 @@ public:
 	or @c NET_EVENT_ACCEPT_FAILED on success and failure resp.
     */
     bool f_callback_on_open;
+    /** Accept only on the loopback address.
+        Default: @c false.
+     */
+    bool localhost_only;
+    /// Are frequent accepts expected?
+    /// Default: @c false.
+    bool frequent_accept;
 
     /// Socket receive buffer size.
     /// 0 => OS default.
@@ -115,7 +121,6 @@ public:
     @param callback_on_open if true, cont is called back with
       NET_EVENT_ACCEPT_SUCCEED, or NET_EVENT_ACCEPT_FAILED on success
       and failure resp.
-    @param listen_socket_in if passed, used for listening.
     @param accept_pool_size NT specific, better left unspecified.
     @param accept_only can be used to customize accept, accept a
       connection only if there is some data to be read. This works
@@ -132,17 +137,27 @@ public:
       port becomes free immediately.
 
   */
-  inkcoreapi virtual Action * accept(Continuation * cont, int port, int domain = AF_INET, int accept_threads = -1,
-                                     bool frequent_accept = false,
-                                     // not used
-                                     unsigned int accept_ip = INADDR_ANY, char *accept_ip_str = NULL, bool callback_on_open = false,
-                                     SOCKET listen_socket_in = NO_FD,   // NT only
-                                     int accept_pool_size = ACCEPTEX_POOL_SIZE, // NT only
-                                     bool accept_only = false,
-                                     sockaddr * bound_sockaddr = 0,
-                                     int *bound_sockaddr_size = 0,
-                                     int recv_bufsize = 0,
-                                     int send_bufsize = 0, uint32_t sockopt_flag = 0, EventType etype = ET_NET);
+  inkcoreapi virtual Action * accept(
+    Continuation * cont,
+    sockaddr_storage const* addr,
+//    int port,
+    AcceptOptions const& opt = DEFAULT_ACCEPT_OPTIONS
+//    int domain = AF_INET,
+//    int accept_threads = -1,
+//    bool frequent_accept = false,
+    // not used
+//    unsigned int accept_ip = INADDR_ANY,
+//    char *accept_ip_str = NULL,
+//    bool callback_on_open = false,
+//    int accept_pool_size = ACCEPTEX_POOL_SIZE, // NT only
+//    bool accept_only = false,
+//    sockaddr * bound_sockaddr = 0,
+//    int *bound_sockaddr_size = 0,
+//    int recv_bufsize = 0,
+//    int send_bufsize = 0,
+//    uint32_t sockopt_flag = 0,
+//    EventType etype = ET_NET
+  );
 
   /**
     Accepts incoming connections on port. Accept connections on port.
@@ -182,9 +197,16 @@ public:
       port becomes free immediately.
 
   */
-  virtual Action *main_accept(Continuation * cont, SOCKET listen_socket_in, sockaddr * bound_sockaddr = NULL,
-                              int *bound_sockaddr_size = NULL, bool accept_only = false, bool localhost_only = false,
-                              AcceptOptions const& opt = DEFAULT_ACCEPT_OPTIONS);
+  virtual Action *main_accept(
+    Continuation * cont,
+    SOCKET listen_socket_in,
+    uint16_t port,
+//    sockaddr * bound_sockaddr = NULL,
+//    int *bound_sockaddr_size = NULL,
+//    bool accept_only = false,
+//    bool localhost_only = false,
+    AcceptOptions const& opt = DEFAULT_ACCEPT_OPTIONS
+  );
 
   /**
     Open a NetVConnection for connection oriented I/O. Connects
@@ -208,8 +230,11 @@ public:
 
   */
 
-  inkcoreapi Action *connect_re(Continuation * cont,
-                                unsigned int ip, int port, NetVCOptions * options = NULL);
+  inkcoreapi Action *connect_re(
+    Continuation * cont,
+    sockaddr_storage const* addr,
+    NetVCOptions * options = NULL
+  );
 
   /**
     Open a NetVConnection for connection oriented I/O. This call
@@ -221,8 +246,7 @@ public:
     asynchronous type connect is desired use connect_re().
 
     @param cont Continuation to be called back with events.
-    @param ip machine to connect to.
-    @param port port to connect to.
+    @param addr Address to which to connect (includes port).
     @param timeout for connect, the cont will get NET_EVENT_OPEN_FAILED
       if connection could not be established for timeout msecs. The
       default is 30 secs.
@@ -231,10 +255,12 @@ public:
     @see connect_re()
 
   */
-  Action *connect_s(Continuation * cont,
-                    unsigned int ip,
-                    int port,
-                    int timeout = NET_CONNECT_TIMEOUT, NetVCOptions * opts = NULL);
+  Action *connect_s(
+    Continuation * cont,
+    sockaddr_storage const* addr,
+    int timeout = NET_CONNECT_TIMEOUT,
+    NetVCOptions * opts = NULL
+  );
 
   /**
     Starts the Netprocessor. This has to be called before doing any

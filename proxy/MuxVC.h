@@ -135,8 +135,8 @@ public:
 
   // Pure virutal functions we need to compile
   SOCKET get_socket();
-  const struct sockaddr_in &get_local_addr();
-  const struct sockaddr_in &get_remote_addr();
+  const sockaddr_storage &get_local_addr();
+  const sockaddr_storage &get_remote_addr();
   unsigned int get_local_ip();
   int get_local_port();
   unsigned int get_remote_ip();
@@ -312,8 +312,8 @@ private:
 
   Action return_accept_action;
 
-  struct sockaddr_in local_addr;
-  struct sockaddr_in remote_addr;
+  sockaddr_storage local_addr;
+  sockaddr_storage remote_addr;
 
   int next_client_id;
   int num_clients;

@@ -38,7 +38,7 @@
 #include "ink_bool.h"
 #include "Diags.h"
 
-#include "P_RecCore.h"
+#include <records/P_RecCore.h>
 
 void mgmt_blockAllSigs();
 
@@ -58,7 +58,7 @@ void mgmt_cleanup();
 
 struct in_addr *mgmt_sortipaddrs(int num, struct in_addr **list);
 char *mgmt_localhost_ip();
-bool mgmt_getAddrForIntr(char *intrName, struct in_addr *addr, int *mtu = 0);
+bool mgmt_getAddrForIntr(char *intrName, sockaddr_storage *addr, int *mtu = 0);
 
 /* the following functions are all DEPRECATED.  The Diags
    interface should be used exclusively in the future */

@@ -248,7 +248,7 @@ connectDirect(const char *host, int port, uint64_t timeout)
     goto error;
   }
 #else
-  struct sockaddr_in name;
+  sockaddr_storage name;
   memset((void *) &name, 0, sizeof(sockaddr_in));
 
   int err;
@@ -275,7 +275,7 @@ connectDirect(const char *host, int port, uint64_t timeout)
   bcopy(pHostent->h_addr, (caddr_t) & (name.sin_addr), pHostent->h_length);
 
   do {
-    err = connect(sock, (struct sockaddr *) &name, sizeof(name));
+    err = connect(sock, (sockaddr_storage *) &name, sizeof(name));
   } while ((err < 0) && ((errno == EINTR) || (errno == EAGAIN)));
 
   if ((err < 0) && (errno != EINPROGRESS)) {

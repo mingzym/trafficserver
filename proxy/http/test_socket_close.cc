@@ -109,7 +109,7 @@ struct Conn
   Connection_t connection_type;
   int listen_s;
   int s;
-  struct sockaddr_in addr;
+  sockaddr_storage addr;
   State state;
   //State_t            state;
   int state_delay_ms;
@@ -351,7 +351,7 @@ do_connect(Conn * from, Conn * to)
     return (from->s);
   }
   // connect
-  if (connect(from->s, (struct sockaddr *) &to->addr, sizeof(to->addr)) < 0) {
+  if (connect(from->s, (sockaddr_storage *) &to->addr, sizeof(to->addr)) < 0) {
     error = -errno;
     if (error != -EINPROGRESS) {
       ::close(from->s);
@@ -387,7 +387,7 @@ do_listen_setup(Conn * c, int port)
     return (c->listen_s);
   }
   // bind socket to port
-  if (bind(c->listen_s, (struct sockaddr *) &c->addr, sizeof(c->addr)) < 0) {
+  if (bind(c->listen_s, (sockaddr_storage *) &c->addr, sizeof(c->addr)) < 0) {
     error = -errno;
     ::close(c->listen_s);
     c->state.state = STATE_ERROR;
@@ -432,7 +432,7 @@ do_accept(Conn * c)
 
   if (select(c->listen_s + 1, &readfds, 0, 0, &timeout) > 0) {
     addrlen = sizeof(c->addr);
-    c->s = accept(c->listen_s, (struct sockaddr *) &c->addr, &addrlen);
+    c->s = accept(c->listen_s, (sockaddr_storage *) &c->addr, &addrlen);
     if (c->s < 0) {
       c->s = -errno;
       cout << "accept failed (" << c->s << ")" << endl;

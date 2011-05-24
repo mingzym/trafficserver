@@ -95,7 +95,7 @@ struct UserInfo
   long bytes_requested;
   StatusLineInfo status_line_info;
   char request_sent[MAX_REQUEST_SIZE];
-  struct sockaddr_in *target_addr;
+  sockaddr_storage *target_addr;
   int fd;
 
   /* for differentiate a completed/non-completed connection */
@@ -105,7 +105,7 @@ struct UserInfo
 
   /////////////////////
 #ifdef _PLUG_IN
-  struct sockaddr_in dynamic_target_addr;
+  sockaddr_storage dynamic_target_addr;
   long content_count;
   TSRequestAction action;
   TSConnectionStatus conn_status;

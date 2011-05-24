@@ -66,7 +66,7 @@ void *G_bulkIOState = NULL;
 InkPipeInfo G_inkPipeInfo;
 
 int G_bwGrapherFd;
-struct sockaddr_in G_bwGrapherLoc;
+sockaddr_storage G_bwGrapherLoc;
 
 void
 initialize_thread_for_udp_net(EThread * thread)
@@ -132,14 +132,14 @@ UDPNetProcessorInternal::udp_read_from_net(UDPNetHandler * nh,
   int r;
   int iters = 0;
   do {
-    struct sockaddr_in fromaddr;
+    sockaddr_storage fromaddr;
     socklen_t fromlen = sizeof(fromaddr);
     // XXX: want to be 0 copy.
     // XXX: really should read into next contiguous region of an IOBufferData
     // which gets referenced by IOBufferBlock.
     char buf[65536];
     int buflen = sizeof(buf);
-    r = socketManager.recvfrom(uc->getFd(), buf, buflen, 0, (struct sockaddr *) &fromaddr, &fromlen);
+    r = socketManager.recvfrom(uc->getFd(), buf, buflen, 0, (sockaddr_storage *) &fromaddr, &fromlen);
     if (r <= 0) {
       // error
       break;
@@ -201,7 +201,7 @@ public:
   inline void free(void);
   inline void init_token(Event * completionToken);
 
-  inline void init_read(int fd, IOBufferBlock * buf, int len, struct sockaddr *fromaddr, socklen_t *fromaddrlen);     // start up polling
+  inline void init_read(int fd, IOBufferBlock * buf, int len, sockaddr_storage *fromaddr, socklen_t *fromaddrlen);     // start up polling
   void set_timer(int seconds)
   {
     timeout_interval = HRTIME_SECONDS(seconds);
@@ -219,7 +219,7 @@ private:
   // on behalf of the client
   Ptr<IOBufferBlock> readbuf;
   int readlen;
-  struct sockaddr *fromaddr;
+  sockaddr_storage *fromaddr;
   socklen_t *fromaddrlen;
   int fd;                       // fd we are reading from
   int ifd;                      // poll fd index
@@ -276,7 +276,7 @@ UDPReadContinuation::init_token(Event * completionToken)
 }
 
 inline void
-UDPReadContinuation::init_read(int rfd, IOBufferBlock * buf, int len, struct sockaddr *fromaddr_, socklen_t *fromaddrlen_)
+UDPReadContinuation::init_read(int rfd, IOBufferBlock * buf, int len, sockaddr_storage *fromaddr_, socklen_t *fromaddrlen_)
 {
   ink_assert(rfd >= 0 && buf != NULL && fromaddr_ != NULL && fromaddrlen_ != NULL);
   fd = rfd;
@@ -416,7 +416,7 @@ Action *
 UDPNetProcessor::recvfrom_re(Continuation * cont,
                              void *token,
                              int fd,
-                             struct sockaddr * fromaddr, socklen_t *fromaddrlen,
+                             sockaddr_storage * fromaddr, socklen_t *fromaddrlen,
                              IOBufferBlock * buf, int len, bool useReadCont, int timeout)
 {
   (void) useReadCont;
@@ -496,7 +496,7 @@ UDPNetProcessor::sendmsg_re(Continuation * cont, void *token, int fd, struct msg
  */
 Action *
 UDPNetProcessor::sendto_re(Continuation * cont,
-                           void *token, int fd, struct sockaddr * toaddr, int toaddrlen, IOBufferBlock * buf, int len)
+                           void *token, int fd, sockaddr_storage * toaddr, int toaddrlen, IOBufferBlock * buf, int len)
 {
   (void) token;
   ink_assert(buf->read_avail() >= len);
@@ -514,43 +514,46 @@ UDPNetProcessor::sendto_re(Continuation * cont,
 }
 
 Action *
-UDPNetProcessor::UDPCreatePortPairs(Continuation * cont,
-                                    int nPairs,
-                                    unsigned int myIP, unsigned int destIP, int send_bufsize, int recv_bufsize)
-{
+UDPNetProcessor::UDPCreatePortPairs(
+  Continuation * cont,
+  int nPairs,
+//  unsigned int myIP, unsigned int destIP,
+  sockaddr_storage const* local_addr,
+  sockaddr_storage const* remote_addr,
+  int send_bufsize, int recv_bufsize
+) {
 
   UDPWorkContinuation *worker = udpWorkContinuationAllocator.alloc();
   // UDPWorkContinuation *worker = NEW(new UDPWorkContinuation);
 
-  worker->init(cont, nPairs, myIP, destIP, send_bufsize, recv_bufsize);
+  worker->init(cont, nPairs, local_addr, remote_addr, send_bufsize, recv_bufsize);
   eventProcessor.schedule_imm(worker, ET_UDP);
   return &(worker->action);
 }
 
 
 bool
-UDPNetProcessor::CreateUDPSocket(int *resfd,
-                                 struct sockaddr_in * addr,
-                                 Action ** status, int my_port, unsigned int my_ip, int send_bufsize, int recv_bufsize)
-{
+UDPNetProcessor::CreateUDPSocket(
+  int *resfd,
+  sockaddr_storage const* remote_addr,
+  sockaddr_storage* local_addr,
+  Action ** status, 
+  int send_bufsize, int recv_bufsize
+) {
   int res = 0, fd = -1;
-  struct sockaddr_in bind_sa;
-  struct sockaddr_in myaddr;
-  int myaddr_len = sizeof(myaddr);
+  int local_addr_len = sizeof(*local_addr);
+
+  ink_assert(ink_inet_are_compatible(remote_addr, local_addr));
 
   *resfd = -1;
-  if ((res = socketManager.socket(AF_INET, SOCK_DGRAM, 0)) < 0)
+  if ((res = socketManager.socket(remote_addr->ss_family, SOCK_DGRAM, 0)) < 0)
     goto HardError;
   fd = res;
   if ((res = safe_fcntl(fd, F_SETFL, O_NONBLOCK)) < 0)
     goto HardError;
-  memset(&bind_sa, 0, sizeof(bind_sa));
-  bind_sa.sin_family = AF_INET;
-  bind_sa.sin_port = htons(my_port);
-  bind_sa.sin_addr.s_addr = my_ip;
-  if ((res = socketManager.ink_bind(fd, (struct sockaddr *) &bind_sa, sizeof(bind_sa), IPPROTO_UDP)) < 0) {
-    unsigned char *pt = (unsigned char *) &my_ip;
-    Debug("udpnet", "ink bind failed --- my_ip = %d.%d.%d.%d", pt[0], pt[1], pt[2], pt[3]);
+  if ((res = socketManager.ink_bind(fd, remote_addr, sizeof(*remote_addr), IPPROTO_UDP)) < 0) {
+    char buff[INET6_ADDRPORTSTRLEN];
+    Debug("udpnet", "ink bind failed on %s", ink_inet_nptop(remote_addr, buff, sizeof(buff)));
     goto SoftError;
   }
 
@@ -562,34 +565,29 @@ UDPNetProcessor::CreateUDPSocket(int *resfd,
     if (unlikely(socketManager.set_sndbuf_size(fd, send_bufsize)))
       Debug("udpnet", "set_dnsbuf_size(%d) failed", send_bufsize);
   }
-  if ((res = safe_getsockname(fd, (struct sockaddr *) &myaddr, &myaddr_len)) < 0) {
+  if ((res = safe_getsockname(fd, local_addr, &local_addr_len)) < 0) {
     Debug("udpnet", "CreateUdpsocket: getsockname didnt' work");
     goto HardError;
   }
-  if (!myaddr.sin_addr.s_addr) {
-    // set to default IP address for machine
-    /** netfixme ... this_machine() is in proxy.
-    if (this_machine()) {
-      myaddr.sin_addr.s_addr = this_machine()->ip;
-    } else {
-      Debug("udpnet","CreateUdpSocket -- machine not initialized");
-    }
-    */
-  }
   *resfd = fd;
-  memcpy(addr, &myaddr, myaddr_len);
   *status = NULL;
-  Debug("udpnet", "creating a udp socket port = %d, %d---success", my_port, addr->sin_port);
+  Debug("udpnet", "creating a udp socket port = %d, %d---success",
+    ink_inet_get_port(remote_addr), ink_inet_get_port(local_addr)
+  );
   return true;
 SoftError:
-  Debug("udpnet", "creating a udp socket port = %d---soft failure", my_port);
+  Debug("udpnet", "creating a udp socket port = %d---soft failure",
+    ink_inet_get_port(local_addr)
+  );
   if (fd != -1)
     socketManager.close(fd);
   *resfd = -1;
   *status = NULL;
   return false;
 HardError:
-  Debug("udpnet", "creating a udp socket port = %d---hard failure", my_port);
+  Debug("udpnet", "creating a udp socket port = %d---hard failure",
+    ink_inet_get_port(local_addr)
+  );
   if (fd != -1)
     socketManager.close(fd);
   *resfd = -1;
@@ -598,10 +596,12 @@ HardError:
 }
 
 void
-UDPNetProcessor::UDPClassifyConnection(Continuation * udpConn, int destIP)
-{
+UDPNetProcessor::UDPClassifyConnection(
+  Continuation * udpConn,
+  InkInetAddr const& destIP
+) {
   int i;
-  UDPConnectionInternal *p = (UDPConnectionInternal *) udpConn;
+  UDPConnectionInternal *p = static_cast<UDPConnectionInternal *>(udpConn);
 
   if (G_inkPipeInfo.numPipes == 0) {
     p->pipe_class = 0;
@@ -612,10 +612,11 @@ UDPNetProcessor::UDPClassifyConnection(Continuation * udpConn, int destIP)
   for (i = 0; i < G_inkPipeInfo.numPipes + 1; i++)
     if (G_inkPipeInfo.perPipeInfo[i].destIP == destIP)
       p->pipe_class = i;
-  // no match; set it to the destIP=0 class
+  // no match; set it to the null class
   if (p->pipe_class == -1) {
-    for (i = 0; i < G_inkPipeInfo.numPipes + 1; i++)
-      if (G_inkPipeInfo.perPipeInfo[i].destIP == 0) {
+    InkInetAddr null; // default constructed -> invalid value.
+    for (i = 0; i < G_inkPipeInfo.numPipes + 1; ++i)
+      if (G_inkPipeInfo.perPipeInfo[i].destIP == null) {
         p->pipe_class = i;
         break;
       }
@@ -628,23 +629,22 @@ UDPNetProcessor::UDPClassifyConnection(Continuation * udpConn, int destIP)
 }
 
 Action *
-UDPNetProcessor::UDPBind(Continuation * cont, int my_port, int my_ip, int send_bufsize, int recv_bufsize)
+UDPNetProcessor::UDPBind(Continuation * cont, sockaddr_storage const* addr, int send_bufsize, int recv_bufsize)
 {
   int res = 0;
   int fd = -1;
   UnixUDPConnection *n = NULL;
-  struct sockaddr_in bind_sa;
-  struct sockaddr_in myaddr;
+  sockaddr_storage myaddr;
   int myaddr_len = sizeof(myaddr);
 
-  if ((res = socketManager.socket(AF_INET, SOCK_DGRAM, 0)) < 0)
+  if ((res = socketManager.socket(addr->ss_family, SOCK_DGRAM, 0)) < 0)
     goto Lerror;
   fd = res;
   if ((res = fcntl(fd, F_SETFL, O_NONBLOCK) < 0))
     goto Lerror;
 
   // If this is a class D address (i.e. multicast address), use REUSEADDR.
-  if ((((unsigned int) (ntohl(my_ip))) & 0xf0000000) == 0xe0000000) {
+  if ((ink_inet_get_ip4_addr(addr) & 0xf0000000) == 0xe0000000) {
     int enable_reuseaddr = 1;
 
     if ((res = safe_setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (char *) &enable_reuseaddr, sizeof(enable_reuseaddr)) < 0)) {
@@ -652,11 +652,7 @@ UDPNetProcessor::UDPBind(Continuation * cont, int my_port, int my_ip, int send_b
     }
   }
 
-  memset(&bind_sa, 0, sizeof(bind_sa));
-  bind_sa.sin_family = AF_INET;
-  bind_sa.sin_port = htons(my_port);
-  bind_sa.sin_addr.s_addr = my_ip;
-  if ((res = socketManager.ink_bind(fd, (struct sockaddr *) &bind_sa, sizeof(bind_sa))) < 0) {
+  if ((res = socketManager.ink_bind(fd, addr, sizeof(*addr))) < 0) {
     goto Lerror;
   }
 
@@ -668,10 +664,10 @@ UDPNetProcessor::UDPBind(Continuation * cont, int my_port, int my_ip, int send_b
     if (unlikely(socketManager.set_sndbuf_size(fd, send_bufsize)))
       Debug("udpnet", "set_dnsbuf_size(%d) failed", send_bufsize);
   }
-  if ((res = safe_getsockname(fd, (struct sockaddr *) &myaddr, &myaddr_len)) < 0) {
+  if ((res = safe_getsockname(fd, &myaddr, &myaddr_len)) < 0) {
     goto Lerror;
   }
-  if (!myaddr.sin_addr.s_addr) {
+  if (!ink_inet_get_ip4_addr(&myaddr)) {
     // set to default IP address for machine
     /** netfixme this_machine is in proxy/
     if (this_machine()) {
@@ -1261,14 +1257,19 @@ UDPNetHandler::mainNetEvent(int event, Event * e)
 
 void
 UDPWorkContinuation::init(Continuation * c, int num_pairs,
-                          unsigned int my_ip, unsigned int dest_ip, int s_bufsize, int r_bufsize)
-{
+  sockaddr_storage const* local_addr,
+  sockaddr_storage const* remote_addr,
+//  unsigned int my_ip, unsigned int dest_ip,
+  int s_bufsize, int r_bufsize
+) {
   mutex = c->mutex;
   cont = c;
   action = c;
   numPairs = num_pairs;
-  myIP = my_ip;
-  destIP = dest_ip;
+  ink_inet_copy(&local_ip, local_addr);
+  ink_inet_copy(&remote_ip, remote_addr);
+//  myIP = my_ip;
+//  destIP = dest_ip;
   sendbufsize = s_bufsize;
   recvbufsize = r_bufsize;
   udpConns = NULL;
@@ -1283,8 +1284,8 @@ UDPWorkContinuation::StateCreatePortPairs(int event, void *data)
 //  int res = 0;
   int numUdpPorts = 2 * numPairs;
   int fd1 = -1, fd2 = -1;
-//  struct sockaddr_in bind_sa;
-  struct sockaddr_in myaddr1, myaddr2;
+  sockaddr_storage target;
+  sockaddr_storage myaddr1, myaddr2;
   int portNum, i;
 //  int myaddr_len = sizeof(myaddr1);
   static int lastAllocPort = 10000;
@@ -1304,6 +1305,7 @@ UDPWorkContinuation::StateCreatePortPairs(int event, void *data)
   }
 
   startTime = ink_get_hrtime_internal();
+  ink_inet_copy(target, remote_ip);
 
   udpConns = NEW(new UnixUDPConnection *[numUdpPorts]);
   for (i = 0; i < numUdpPorts; i++)
@@ -1316,8 +1318,10 @@ UDPWorkContinuation::StateCreatePortPairs(int event, void *data)
   i = 0;
   while (i < numUdpPorts) {
 
-    if (udpNet.CreateUDPSocket(&fd1, &myaddr1, &status, portNum, myIP, sendbufsize, recvbufsize)) {
-      if (udpNet.CreateUDPSocket(&fd2, &myaddr2, &status, portNum + 1, myIP, sendbufsize, recvbufsize)) {
+    ink_inet_port_cast(target) = htons(portNum);
+    if (udpNet.CreateUDPSocket(&fd1, &target, &myaddr1, &status, sendbufsize, recvbufsize)) {
+      ink_inet_port_cast(target) = htons(portNum + 1);
+      if (udpNet.CreateUDPSocket(&fd2, &target, &myaddr2, &status, sendbufsize, recvbufsize)) {
         udpConns[i] = NEW(new UnixUDPConnection(fd1));        // new_UnixUDPConnection(fd1);
         udpConns[i]->setBinding(&myaddr1);
         i++;
@@ -1351,7 +1355,7 @@ UDPWorkContinuation::StateCreatePortPairs(int event, void *data)
   }
 
   for (i = 0; i < numUdpPorts; i++) {
-    udpNet.UDPClassifyConnection(udpConns[i], destIP);
+    udpNet.UDPClassifyConnection(udpConns[i], InkInetAddr(target));
     Debug("udpnet-pipe", "Adding (port = %d) to Pipe class: %d",
           udpConns[i]->getPortNum(), udpConns[i]->pipe_class);
   }

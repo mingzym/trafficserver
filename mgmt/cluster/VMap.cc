@@ -167,7 +167,7 @@ VMap::VMap(char *interface, unsigned long ip, ink_mutex * m)
   }
   {
     int tmp_socket;
-    struct sockaddr_in *tmp;    // a tmp ptr for addresses
+    sockaddr_storage *tmp;    // a tmp ptr for addresses
     struct ifconf ifc;          // ifconf information
     char *ifbuf;                // ifconf buffer
     struct ifreq *ifr, *ifend;  // pointer to individual inferface info
@@ -218,7 +218,7 @@ VMap::VMap(char *interface, unsigned long ip, ink_mutex * m)
           if (ifr->ifr_ifru.ifru_addr.sa_family == AF_INET) {
             RealIPInfo *tmp_realip_info;
 
-            tmp = (struct sockaddr_in *) &ifr->ifr_ifru.ifru_addr;
+            tmp = (sockaddr_storage *) &ifr->ifr_ifru.ifru_addr;
 
             ink_assert((tmp_realip_info = (RealIPInfo *) xmalloc(sizeof(RealIPInfo))));
             tmp_realip_info->real_ip = tmp->sin_addr;

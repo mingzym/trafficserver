@@ -305,14 +305,14 @@ commSetNonBlocking(int fd)
 /* Wait for an incoming connection on FD.  FD should be a socket returned
  * from comm_listen. */
 int
-comm_accept(int fd, struct sockaddr_in *peer, struct sockaddr_in *me)
+comm_accept(int fd, sockaddr_storage_in *peer, sockaddr_storage_in *me)
 {
   int sock;
-  struct sockaddr_in P;
+  sockaddr_storage_in P;
   int Slen;
 
   Slen = sizeof(P);
-  if ((sock = accept(fd, (struct sockaddr *) &P, &Slen)) < 0) {
+  if ((sock = accept(fd, (sockaddr_storage *) &P, &Slen)) < 0) {
 #ifdef DEBUG
     fprintf(stderr, "comm_accept: FD %d: accept failure\n", fd);
 #endif
@@ -358,8 +358,8 @@ commSetReuseAddr(int fd)
 void
 accept_connection()
 {
-  struct sockaddr_in peer;
-  struct sockaddr_in me;
+  sockaddr_storage_in peer;
+  sockaddr_storage_in me;
   int fd;
 
   if ((fd = comm_accept(theHttpConnection, &peer, &me)) < 0) {

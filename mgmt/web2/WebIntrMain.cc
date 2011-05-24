@@ -158,7 +158,7 @@ static fd
 newUNIXsocket(char *fpath)
 {
   // coverity[var_decl]
-  struct sockaddr_un serv_addr;
+  sockaddr_storage_un serv_addr;
   int servlen;
   fd socketFD;
   int one = 1;
@@ -174,7 +174,7 @@ newUNIXsocket(char *fpath)
   serv_addr.sun_family = AF_UNIX;
   ink_strncpy(serv_addr.sun_path, fpath, sizeof(serv_addr.sun_path));
 #if defined(darwin) || defined(freebsd)
-  servlen = sizeof(struct sockaddr_un);
+  servlen = sizeof(sockaddr_storage_un);
 #else
   servlen = strlen(serv_addr.sun_path) + sizeof(serv_addr.sun_family);
 #endif
@@ -182,7 +182,7 @@ newUNIXsocket(char *fpath)
     mgmt_log(stderr, "[newUNIXsocket] Unable to set socket options: %s\n", strerror(errno));
   }
 
-  if ((bind(socketFD, (struct sockaddr *) &serv_addr, servlen)) < 0) {
+  if ((bind(socketFD, (sockaddr_storage *) &serv_addr, servlen)) < 0) {
     mgmt_log(stderr, "[newUNIXsocket] Unable to bind socket: %s\n", strerror(errno));
     close_socket(socketFD);
     return -1;
@@ -220,7 +220,7 @@ newUNIXsocket(char *fpath)
 static fd
 newTcpSocket(int port)
 {
-  struct sockaddr_in socketInfo;
+  sockaddr_storage socketInfo;
   fd socketFD;
   int one = 1;
 
@@ -333,7 +333,7 @@ webIntr_main(void *x)
   fd acceptFD = 0;              // FD that is ready for accept
   UIthr_t serviceThr = NO_THR;  // type for new service thread
 
-  struct sockaddr_in *clientInfo;       // Info about client connection
+  sockaddr_storage *clientInfo;       // Info about client connection
   ink_thread thrId;             // ID of service thread we just spawned
   fd_set selectFDs;             // FD set passed to select
   int publicPort = -1;          // Port for incoming autoconf connections
@@ -506,8 +506,8 @@ webIntr_main(void *x)
     ink_atomic_increment((int32_t *) & numServiceThr, 1);
 
     // coverity[alloc_fn]
-    clientInfo = (struct sockaddr_in *) xmalloc(sizeof(struct sockaddr_in));
-    addrLen = sizeof(struct sockaddr_in);
+    clientInfo = (sockaddr_storage *) xmalloc(sizeof(sockaddr_storage));
+    addrLen = sizeof(sockaddr_storage);
 
     // coverity[noescape]
     if ((clientFD = mgmt_accept(acceptFD, (sockaddr *) clientInfo, &addrLen)) < 0) {

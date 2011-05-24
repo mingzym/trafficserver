@@ -63,21 +63,26 @@ create_this_cluster_machine()
   cluster_machine = NEW(new ClusterMachine);
 }
 
-ClusterMachine::ClusterMachine(char *ahostname, unsigned int aip, int aport):
+ClusterMachine::ClusterMachine(char *ahostname,
+//  unsigned int aip, int aport
+  sockaddr_storage const* aip
+):
 dead(false),
 hostname(ahostname),
-ip(aip),
-cluster_port(aport),
+//ip(aip),
+//cluster_port(aport),
 msg_proto_major(0),
 msg_proto_minor(0),
 clusterHandler(0)
 {
   EThread *thread = this_ethread();
   ProxyMutex *mutex = thread->mutex;
+
+  ink_inet_copy(&ip, aip);
 #ifndef INK_NO_CLUSTER
   CLUSTER_INCREMENT_DYN_STAT(CLUSTER_MACHINES_ALLOCATED_STAT);
 #endif
-  if (!aip) {
+  if (!ink_inet_is_ip(aip)) {
     char localhost[1024];
     if (!ahostname) {
       ink_release_assert(!gethostname(localhost, 1023));
@@ -89,7 +94,8 @@ clusterHandler(0)
     //   clustering from the manager, so the manager can control what
     //   interface we cluster over.  Otherwise figure it out ourselves
 #ifdef LOCAL_CLUSTER_TEST_MODE
-    ip = inet_addr("127.0.0.1");
+//    ip = inet_addr("127.0.0.1");
+    ink_inet_ip4_set(ip, INADDR_LOOPBACK);
 #else
 #ifdef CLUSTER_TEST
     int clustering_enabled = true;
@@ -99,43 +105,42 @@ clusterHandler(0)
     if (clustering_enabled) {
       char *clusterIP = getenv("PROXY_CLUSTER_ADDR");
       Debug("cluster_note", "[Machine::Machine] Cluster IP addr: %s\n", clusterIP);
-      ip = inet_addr(clusterIP);
+//      ip = inet_addr(clusterIP);
+      ink_inet_pton(&ip, clusterIP);
     } else {
-
       ink_gethostbyname_r_data data;
       struct hostent *r = ink_gethostbyname_r(ahostname, &data);
       if (!r) {
         Warning("unable to DNS %s: %d", ahostname, data.herrno);
-        ip = 0;
+        ink_inet_invalidate(ip);
       } else {
-
         // lowest IP address
-
-        ip = (unsigned int) -1; // 0xFFFFFFFF
+        uint32_t xip = (unsigned int) -1; // 0xFFFFFFFF
         for (int i = 0; r->h_addr_list[i]; i++)
-          if (ip > *(unsigned int *) r->h_addr_list[i])
-            ip = *(unsigned int *) r->h_addr_list[i];
-        if (ip == (unsigned int) -1)
-          ip = 0;
+          if (xip > *(unsigned int *) r->h_addr_list[i])
+            xip = *(unsigned int *) r->h_addr_list[i];
+        if (xip == (unsigned int) -1)
+          ink_inet_invalidate(ip);
+        else
+          ink_inet_ip4_set(ip, xip);
       }
       //ip = htonl(ip); for the alpha!
     }
 #endif // LOCAL_CLUSTER_TEST_MODE
   } else {
-
-    ip = aip;
-
-    ink_gethostbyaddr_r_data data;
-    struct hostent *r = ink_gethostbyaddr_r((char *) &ip, sizeof(int),
-                                            AF_INET, &data);
-
-    if (r == NULL) {
-      unsigned char x[4];
-      memset(x, 0, sizeof(x));
-      *(uint32_t *) & x = (uint32_t) ip;
-      Debug("machine_debug", "unable to reverse DNS %u.%u.%u.%u: %d", x[0], x[1], x[2], x[3], data.herrno);
+    addrinfo* ai = 0;
+    char buff[1024];
+    ink_inet_copy(ip, aip);
+//    ip = aip;
+   
+    int z = getnameinfo(&ip, sizeof(ip), buff, sizeof(buff), 0, 0, NI_NAMEREQD); 
+    if (0 != z) {
+      Debug("machine_debug", "unable to reverse DNS %s: %d",
+        ink_inet_ntop(&ip, buff, sizeof buff),
+        z
+      );
     } else
-      hostname = xstrdup(r->h_name);
+      hostname = xstrdup(buff);
   }
   if (hostname)
     hostname_len = strlen(hostname);

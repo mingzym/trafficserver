@@ -510,17 +510,17 @@ public:
   // Pure virtual functions
   virtual struct in_addr *GetIP() = 0;
   virtual int GetPort() = 0;
-  virtual Action *SendMsg_re(Continuation *, void *, struct msghdr *, struct sockaddr_in *to) = 0;
-  virtual Action *RecvFrom_re(Continuation *, void *, IOBufferBlock *, int, struct sockaddr *, socklen_t *) = 0;
+  virtual Action *SendMsg_re(Continuation *, void *, struct msghdr *, sockaddr_storage *to) = 0;
+  virtual Action *RecvFrom_re(Continuation *, void *, IOBufferBlock *, int, sockaddr_storage *, socklen_t *) = 0;
   virtual int GetRecvFD() = 0;
   virtual int GetSendFD() = 0;
   virtual int ExpectedReplies(BitMap *) = 0;
-  virtual int ValidSender(struct sockaddr_in *) = 0;
-  virtual void LogSendMsg(ICPMsg_t *, struct sockaddr_in *) = 0;
+  virtual int ValidSender(sockaddr_storage *) = 0;
+  virtual void LogSendMsg(ICPMsg_t *, sockaddr_storage *) = 0;
   virtual int IsOnline() = 0;
   virtual Connection *GetSendChan() = 0;
   virtual Connection *GetRecvChan() = 0;
-  virtual int ExtToIntRecvSockAddr(struct sockaddr_in *, struct sockaddr_in *) = 0;
+  virtual int ExtToIntRecvSockAddr(sockaddr_storage *, sockaddr_storage *) = 0;
 
   enum
   { OFFLINE_THRESHOLD = 20 };
@@ -569,7 +569,7 @@ public:
   // these shouldn't be public
   // this is for delayed I/O
   Ptr<IOBufferBlock> buf;
-  struct sockaddr_in fromaddr;
+  sockaddr_storage fromaddr;
   socklen_t fromaddrlen;
   int notFirstRead;             // priming the reads
   Action *readAction;           // outstanding read
@@ -616,14 +616,14 @@ public:
   int GetProxyPort();
   virtual struct in_addr *GetIP();
   virtual int GetPort();
-  virtual Action *SendMsg_re(Continuation *, void *, struct msghdr *, struct sockaddr_in *to);
-  virtual Action *RecvFrom_re(Continuation *, void *, IOBufferBlock *, int, struct sockaddr *, socklen_t *);
+  virtual Action *SendMsg_re(Continuation *, void *, struct msghdr *, sockaddr_storage *to);
+  virtual Action *RecvFrom_re(Continuation *, void *, IOBufferBlock *, int, sockaddr_storage *, socklen_t *);
   virtual int GetRecvFD();
   virtual int GetSendFD();
   virtual int ExpectedReplies(BitMap *);
-  virtual int ValidSender(struct sockaddr_in *);
-  virtual void LogSendMsg(ICPMsg_t *, struct sockaddr_in *);
-  virtual int ExtToIntRecvSockAddr(struct sockaddr_in *in, struct sockaddr_in *out);
+  virtual int ValidSender(sockaddr_storage *);
+  virtual void LogSendMsg(ICPMsg_t *, sockaddr_storage *);
+  virtual int ExtToIntRecvSockAddr(sockaddr_storage *in, sockaddr_storage *out);
   inline virtual int IsOnline()
   {
     return 1;
@@ -667,13 +667,13 @@ public:
 
   virtual struct in_addr *GetIP();
   virtual int GetPort();
-  virtual Action *SendMsg_re(Continuation *, void *, struct msghdr *, struct sockaddr_in *to);
-  virtual Action *RecvFrom_re(Continuation *, void *, IOBufferBlock *, int, struct sockaddr *, socklen_t *);
+  virtual Action *SendMsg_re(Continuation *, void *, struct msghdr *, sockaddr_storage *to);
+  virtual Action *RecvFrom_re(Continuation *, void *, IOBufferBlock *, int, sockaddr_storage *, socklen_t *);
   virtual int GetRecvFD();
   virtual int GetSendFD();
   virtual int ExpectedReplies(BitMap *);
-  virtual int ValidSender(struct sockaddr_in *);
-  virtual void LogSendMsg(ICPMsg_t *, struct sockaddr_in *);
+  virtual int ValidSender(sockaddr_storage *);
+  virtual void LogSendMsg(ICPMsg_t *, sockaddr_storage *);
   virtual int IsOnline();
   inline virtual Connection *GetRecvChan()
   {
@@ -683,7 +683,7 @@ public:
   {
     return &_send_chan;
   }
-  inline virtual int ExtToIntRecvSockAddr(struct sockaddr_in *in, struct sockaddr_in *out)
+  inline virtual int ExtToIntRecvSockAddr(sockaddr_storage *in, sockaddr_storage *out)
   {
     Peer *P = FindMultiCastChild(&in->sin_addr, 0);
     if (P) {
@@ -702,7 +702,7 @@ private:
   //---------------------------
   // Multicast specific data
   //---------------------------
-  struct sockaddr_in _mc_addr;
+  sockaddr_storage _mc_addr;
   int _mc_ttl;
   struct multicast_data
   {
@@ -1066,7 +1066,7 @@ public:
       Ptr<IOBufferBlock> _buf;       // the buffer with the ICP message in it
     ICPMsg_t *_rICPmsg;
     int _rICPmsg_len;
-    struct sockaddr_in _sender; // sender of rICPmsg
+    sockaddr_storage _sender; // sender of rICPmsg
     URL _cachelookupURL;
     int _queryResult;
     ICPRequestCont *_ICPReqCont;
@@ -1188,7 +1188,7 @@ private:
   URL *_url;
 
   // Return data
-  struct sockaddr_in _ret_sockaddr;
+  sockaddr_storage _ret_sockaddr;
   ICPreturn_t _ret_status;
   class Action _act;
 

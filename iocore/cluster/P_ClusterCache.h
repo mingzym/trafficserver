@@ -161,9 +161,12 @@ struct ClusterConfiguration
     return machines[hash_table[hash_value % CLUSTER_HASH_TABLE_SIZE]];
   }
 
-  ClusterMachine *find(unsigned int ip, int port = 0) {
+  ClusterMachine *findByAddr(
+//    unsigned int ip, int port = 0
+    sockaddr_storage const* ip
+  ) {
     for (int i = 0; i < n_machines; i++)
-      if (ip == machines[i]->ip && (!port || !machines[i]->cluster_port || machines[i]->cluster_port == port))
+      if (0 == ink_inet_cmp(ip, &machines[i]->ip))
         return machines[i];
     return NULL;
   }

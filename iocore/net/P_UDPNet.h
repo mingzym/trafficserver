@@ -399,7 +399,6 @@ struct InkSinglePipeInfo
   {
     wt = 0.0;
     bwLimit = 0;
-    destIP = 0;
     count = 0;
     bytesSent = pktsSent = 0;
     bwAlloc = 0;
@@ -417,7 +416,7 @@ struct InkSinglePipeInfo
   int64_t bwAlloc;
   // this is in Mbps
   double bwUsed;
-  int32_t destIP;
+  InkInetAddr destIP;
   uint32_t count;
   uint64_t bytesSent;
   uint64_t pktsSent;
@@ -437,13 +436,18 @@ extern InkPipeInfo G_inkPipeInfo;
 class UDPWorkContinuation:public Continuation
 {
 public:
-  UDPWorkContinuation():cont(NULL), numPairs(0), myIP(0), destIP(0),
-    sendbufsize(0), recvbufsize(0), udpConns(NULL), resultCode(NET_EVENT_DATAGRAM_OPEN)
+  UDPWorkContinuation():cont(NULL), numPairs(0), sendbufsize(0), recvbufsize(0), udpConns(NULL), resultCode(NET_EVENT_DATAGRAM_OPEN)
   {
+    ink_inet_init(local_ip);
+    ink_inet_init(remote_ip);
   };
   ~UDPWorkContinuation() {
   };
-  void init(Continuation * c, int num_pairs, unsigned int my_ip, unsigned int dest_ip, int s_bufsize, int r_bufsize);
+  void init(Continuation * c, int num_pairs,
+    sockaddr_storage const* local_ip,
+    sockaddr_storage const* remote_ip,
+//    unsigned int my_ip, unsigned int dest_ip,
+    int s_bufsize, int r_bufsize);
   int StateCreatePortPairs(int event, void *data);
   int StateDoCallback(int event, void *data);
 
@@ -452,7 +456,9 @@ public:
 private:
   Continuation * cont;
   int numPairs;
-  unsigned int myIP, destIP;
+//  unsigned int myIP, destIP;
+  sockaddr_storage local_ip; ///< replaces myIP.
+  sockaddr_storage remote_ip; ///< replaces destIP.
   int sendbufsize, recvbufsize;
   UnixUDPConnection **udpConns;
   int resultCode;

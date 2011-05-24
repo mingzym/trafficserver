@@ -1046,7 +1046,8 @@ RecordElement RecordsConfig[] = {
   ,
   {RECT_CONFIG, "proxy.config.dns.dedicated_thread", RECD_INT, "0", RECU_RESTART_TS, RR_NULL, RECC_NULL, "[0-1]", RECA_NULL}
   ,
-
+  {RECT_CONFIG, "proxy.config.dns.prefer_ipv6", RECD_INT, "0", RECU_RESTART_TS, RR_NULL, RECC_NULL, "[0-1]", RECA_NULL}
+  ,
   //##############################################################################
   //#
   //# HostDB

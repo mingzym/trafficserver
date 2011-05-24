@@ -41,7 +41,7 @@
 typedef struct
 {
   SocketInfo sock_info;         // stores event socket info
-  struct sockaddr *adr;
+  sockaddr_storage *adr;
   bool events_registered[NUM_EVENTS];
 } EventClientT;
 

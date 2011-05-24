@@ -20,6 +20,8 @@ noinst_PROGRAMS = mkdfa CompileParseRules
 check_PROGRAMS = test_atomic test_freelist test_arena test_List test_Map test_Vec
 TESTS = $(check_PROGRAMS)
 
+AM_CPPFLAGS = -I$(top_srcdir)/lib
+
 lib_LTLIBRARIES = libtsutil.la
 
 libtsutil_la_LDFLAGS = -no-undefined -version-info @TS_LIBTOOL_VERSION@
@@ -118,6 +120,8 @@ libtsutil_la_SOURCES = \
   fastlz.h \
   fastlz.c \
   I_Version.h \
+  IntrusiveDList.h \
+  IpMap.h IpMap.cc \
   List.h \
   llqueue.cc \
   lockfile.cc \

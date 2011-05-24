@@ -891,7 +891,7 @@ PrefetchUrlBlaster::udpUrlBlaster(int event, void *data)
         setup_udp_header(block->start(), get_udp_seq_no(), 0, true);
         setup_object_header(block->start() + PRELOAD_UDP_HEADER_LEN, block->read_avail() - PRELOAD_UDP_HEADER_LEN, true);
 
-        struct sockaddr_in saddr;
+        sockaddr_storage saddr;
         saddr.sin_family = AF_INET;
         saddr.sin_port = htons(prefetch_config.stuffer_port);
         if (url_head->url_multicast_ip)
@@ -1682,7 +1682,7 @@ PrefetchBlaster::blastObject(int event, void *data)
 
       setup_udp_header(io_block->start(), seq_no, n_pkts_sent++, (towrite >= nread_avail));
 
-      struct sockaddr_in saddr;
+      sockaddr_storage saddr;
       saddr.sin_family = AF_INET;
       saddr.sin_port = htons(prefetch_config.stuffer_port);
       saddr.sin_addr.s_addr = (url_ent->data_multicast_ip) ? url_ent->data_multicast_ip : url_ent->child_ip;

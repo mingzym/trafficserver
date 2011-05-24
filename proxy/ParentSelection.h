@@ -38,7 +38,7 @@
 
 #include "ink_apidefs.h"
 
-#include "P_RecProcess.h"
+#include <records/P_RecProcess.h>
 
 struct RequestData;
 typedef RequestData RD;

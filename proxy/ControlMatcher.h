@@ -98,7 +98,7 @@
 #endif
 
 #include "DynArray.h"
-#include "IpLookup.h"
+#include <ts/IpMap.h>
 
 #include "ink_port.h"
 #include "HTTP.h"
@@ -143,16 +143,18 @@ public:
 
   HttpRequestData()
     : hdr(NULL), hostname_str(NULL), api_info(NULL),
-      xact_start(0), src_ip(0), dest_ip(0), incoming_port(0), tag(NULL)
-  { }
+      xact_start(0), tag(NULL)
+  {
+    ink_inet_invalidate(src_ip);
+    ink_inet_invalidate(dest_ip);
+  }
 
   HTTPHdr *hdr;
   char *hostname_str;
   _HttpApiInfo *api_info;
   time_t xact_start;
-  ip_addr_t src_ip;
-  ip_addr_t dest_ip;
-  uint16_t incoming_port;
+  sockaddr_storage src_ip;
+  sockaddr_storage dest_ip;
   char *tag;
 };
 
@@ -243,7 +245,7 @@ public:
   //private:
   //void MatchArray(ip_addr_t addr, RD* rdata, Result* result, void* array);
   static void PrintFunc(void *opaque_data);
-  IpLookup *ip_lookup;          // Data structure to do lookups
+  IpMap *ip_lookup;          // Data structure to do lookups
   Data *data_array;             // array of the data lements with in the table
   int array_len;                // size of the arrays
   int num_el;                   // number of elements in the table

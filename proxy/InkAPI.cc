@@ -5077,7 +5077,7 @@ TSHttpTxnTransformRespGet(TSHttpTxn txnp, TSMBuffer *bufp, TSMLoc *obj)
   return TS_ERROR;
 }
 
-const struct sockaddr_storage *
+const sockaddr_storage *
 TSHttpTxnClientSockAddrGet(TSHttpTxn txnp)
 {
   sdk_assert(sdk_sanity_check_txn(txnp) == TS_SUCCESS);
@@ -5116,7 +5116,7 @@ TSHttpTxnServerIPGet(TSHttpTxn txnp)
 // This API does currently not use or honor the port specified in the sockaddr.
 // This could change in a future version, but for now, leave it at 0 (or undef).
 TSReturnCode
-TSHttpTxnOutgoingAddrSet(TSHttpTxn txnp, const struct sockaddr *addr, socklen_t addrlen)
+TSHttpTxnOutgoingAddrSet(TSHttpTxn txnp, const sockaddr_storage *addr, socklen_t addrlen)
 {
   sdk_assert(sdk_sanity_check_txn(txnp) == TS_SUCCESS);
   HttpSM *sm = (HttpSM *) txnp;
@@ -5124,12 +5124,12 @@ TSHttpTxnOutgoingAddrSet(TSHttpTxn txnp, const struct sockaddr *addr, socklen_t 
   sm->t_state.setup_per_txn_configs(); // Make sure the txn_conf struct is setup
 
   // TODO: For now only, we really ought to make all "internal" IP representations
-  // use struct sockaddr_storage.
+  // use sockaddr_storage.
   switch (addr->sa_family) {
   case AF_INET:
     {
-      sdk_assert(addrlen >= sizeof(struct sockaddr_in));
-      const struct sockaddr_in *v4addr = reinterpret_cast<const struct sockaddr_in *>(addr);
+      sdk_assert(addrlen >= sizeof(sockaddr_storage));
+      const sockaddr_storage *v4addr = reinterpret_cast<const sockaddr_storage *>(addr);
       sm->t_state.txn_conf->outgoing_ip_to_bind_saddr = v4addr->sin_addr.s_addr;
 
       return TS_SUCCESS;

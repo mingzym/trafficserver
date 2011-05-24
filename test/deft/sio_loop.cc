@@ -66,7 +66,7 @@ SIO::open_server(unsigned short int port)
     perror("socket");
     do_exit(EXIT_FAILURE);
   }
-  struct sockaddr_in name;
+  sockaddr_storage name;
 
   /* Give the socket a name. */
   name.sin_family = AF_INET;
@@ -76,7 +76,7 @@ SIO::open_server(unsigned short int port)
     perror((char *) "setsockopt");
     do_exit(EXIT_FAILURE);
   }
-  if ((err = bind(sock, (struct sockaddr *) &name, sizeof(name))) < 0) {
+  if ((err = bind(sock, (sockaddr_storage *) &name, sizeof(name))) < 0) {
     if (errno == EADDRINUSE)
       return -EADDRINUSE;
     perror("bind");
@@ -84,7 +84,7 @@ SIO::open_server(unsigned short int port)
   }
 
   int addrlen = sizeof(name);
-  if ((err = getsockname(sock, (struct sockaddr *) &name,
+  if ((err = getsockname(sock, (sockaddr_storage *) &name,
 #ifndef linux
                          &addrlen
 #else
@@ -123,12 +123,12 @@ SIO::open_server(unsigned short int port)
 int
 SIO::accept_sock(int sock)
 {
-  struct sockaddr_in clientname;
+  sockaddr_storage clientname;
   int size = sizeof(clientname);
   int new_fd = 0;
 
   do {
-    new_fd = accept(sock, (struct sockaddr *) &clientname,
+    new_fd = accept(sock, (sockaddr_storage *) &clientname,
 #ifndef linux
                     &size
 #else
@@ -189,7 +189,7 @@ SIO::make_client(unsigned int addr, int port)
   }
 
   /* Give the socket a name. */
-  struct sockaddr_in name;
+  sockaddr_storage name;
   name.sin_family = AF_INET;
   name.sin_port = htons(port);
   name.sin_addr.s_addr = addr;
@@ -198,7 +198,7 @@ SIO::make_client(unsigned int addr, int port)
         ((unsigned char *) &addr)[0], ((unsigned char *) &addr)[1],
         ((unsigned char *) &addr)[2], ((unsigned char *) &addr)[3], port);
 
-  while (connect(sock, (struct sockaddr *) &name, sizeof(name)) < 0) {
+  while (connect(sock, (sockaddr_storage *) &name, sizeof(name)) < 0) {
     if (errno == EINTR)
       continue;
     if (errno == EINPROGRESS)

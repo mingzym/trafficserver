@@ -148,8 +148,8 @@ DoTest::create_new_connection_and_send_request(int user, struct timeval current_
   user_info[user].fd = fd;
   fcntl(fd, F_SETFD, O_NONBLOCK);
 
-  while ((status = connect(fd, (struct sockaddr *) user_info[user].target_addr,
-                           sizeof(struct sockaddr))) < 0 && ((errno == EINTR)));
+  while ((status = connect(fd, (sockaddr_storage *) user_info[user].target_addr,
+                           sizeof(sockaddr_storage))) < 0 && ((errno == EINTR)));
 
   gettimeofday(&current_time, NULL);
   user_info[user].connect_time = current_time;

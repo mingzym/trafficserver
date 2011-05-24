@@ -188,7 +188,7 @@ openTSConn()
     return -1;
   }
 
-  struct sockaddr_in saddr;
+  sockaddr_storage saddr;
   saddr.sin_family = AF_INET;
   saddr.sin_port = htons(TSPORT);
 //#define INADDR_LOOPBACK ((209<<24)|(131<<16)|(52<<8)|48)
@@ -311,12 +311,12 @@ main(int argc, char *argv[])
 
   int fd = socket(PF_INET, SOCK_DGRAM, 0);
 
-  struct sockaddr_in saddr;
+  sockaddr_storage saddr;
   saddr.sin_family = AF_INET;
   saddr.sin_port = htons(port);
   saddr.sin_addr.s_addr = INADDR_ANY;
 
-  if ((bind(fd, (struct sockaddr *) &saddr, sizeof(saddr))) < 0) {
+  if ((bind(fd, (sockaddr_storage *) &saddr, sizeof(saddr))) < 0) {
     perror("bind(udp_fd)");
     free(pkt_buf);
     return 0;

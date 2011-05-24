@@ -55,9 +55,9 @@ class ICPProcessor;
 //
 //      Action * icpProcessor.ICPQuery(Continuation *, URL *)
 //        Returns:
-//          Invokes continuation handleEvent(ICPreturn_t, struct sockaddr_in *)
+//          Invokes continuation handleEvent(ICPreturn_t, sockaddr_storage *)
 //          where ICPreturn_t is ICP_LOOKUP_FOUND or ICP_LOOKUP_FAILED and
-//          struct sockaddr_in (ip,port) is host containing URL data.
+//          sockaddr_storage (ip,port) is host containing URL data.
 //***************************************************************************
 class ICPProcessorExt
 {

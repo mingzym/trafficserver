@@ -31,8 +31,7 @@
 #define  DNS_MAX_ADDRS                35
 #define  DNS_HOSTBUF_SIZE           8192
 #define  DOMAIN_SERVICE_PORT          53
-#define  DEFAULT_DOMAIN_NAME_SERVER    0        // use the default server
-
+#define  DEFAULT_DOMAIN_NAME_SERVER    0
 
 /**
   All buffering required to handle a DNS receipt. For asynchronous DNS,
@@ -88,7 +87,12 @@ struct DNSProcessor: public Processor
 
   // Open/close a link to a 'named' (done in start())
   //
-  void open(unsigned int ip = DEFAULT_DOMAIN_NAME_SERVER, int port = DOMAIN_SERVICE_PORT, int options = _res.options);
+  void open(
+    sockaddr_storage const* target = 0, // 0 -> use default
+//    unsigned int ip = DEFAULT_DOMAIN_NAME_SERVER,
+//    int port = DOMAIN_SERVICE_PORT,
+    int options = _res.options
+  );
 
   DNSProcessor();
 

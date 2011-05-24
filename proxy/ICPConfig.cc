@@ -860,7 +860,7 @@ ParentSiblingPeer::GetPort()
 }
 
 Action *
-ParentSiblingPeer::SendMsg_re(Continuation * cont, void *token, struct msghdr * msg, struct sockaddr_in * to)
+ParentSiblingPeer::SendMsg_re(Continuation * cont, void *token, struct msghdr * msg, sockaddr_storage * to)
 {
   // Note: All sends are funneled through the local peer UDP socket.
 
@@ -886,7 +886,7 @@ ParentSiblingPeer::SendMsg_re(Continuation * cont, void *token, struct msghdr * 
 
 Action *
 ParentSiblingPeer::RecvFrom_re(Continuation * cont, void *token,
-                               IOBufferBlock * bufblock, int size, struct sockaddr * from, socklen_t *fromlen)
+                               IOBufferBlock * bufblock, int size, sockaddr_storage * from, socklen_t *fromlen)
 {
   // Note: All receives are funneled through the local peer UDP socket.
 
@@ -929,7 +929,7 @@ ParentSiblingPeer::ExpectedReplies(BitMap * expected_replies_list)
 }
 
 int
-ParentSiblingPeer::ValidSender(struct sockaddr_in *fr)
+ParentSiblingPeer::ValidSender(sockaddr_storage *fr)
 {
   if (_type == PEER_LOCAL) {
     //
@@ -957,7 +957,7 @@ ParentSiblingPeer::ValidSender(struct sockaddr_in *fr)
 }
 
 void
-ParentSiblingPeer::LogSendMsg(ICPMsg_t * m, struct sockaddr_in *sa)
+ParentSiblingPeer::LogSendMsg(ICPMsg_t * m, sockaddr_storage *sa)
 {
   NOWARN_UNUSED(sa);
   // Note: ICPMsg_t (m) is in network byte order
@@ -969,12 +969,12 @@ ParentSiblingPeer::LogSendMsg(ICPMsg_t * m, struct sockaddr_in *sa)
 }
 
 int
-ParentSiblingPeer::ExtToIntRecvSockAddr(struct sockaddr_in *in, struct sockaddr_in *out)
+ParentSiblingPeer::ExtToIntRecvSockAddr(sockaddr_storage *in, sockaddr_storage *out)
 {
   Peer *p = _ICPpr->FindPeer(&in->sin_addr, -1);        // ignore port
   if (p && (p->GetType() != PEER_LOCAL)) {
     // Map from received (ip, port) to defined (ip, port).
-    struct sockaddr_in s;
+    sockaddr_storage s;
     memset((void *) &s, 0, sizeof(s));
     s.sin_port = htons(p->GetPort());
     s.sin_addr = *p->GetIP();
@@ -1018,7 +1018,7 @@ MultiCastPeer::GetPort()
 }
 
 Action *
-MultiCastPeer::SendMsg_re(Continuation * cont, void *token, struct msghdr * msg, struct sockaddr_in * to)
+MultiCastPeer::SendMsg_re(Continuation * cont, void *token, struct msghdr * msg, sockaddr_storage * to)
 {
   Action *a;
 
@@ -1038,7 +1038,7 @@ MultiCastPeer::SendMsg_re(Continuation * cont, void *token, struct msghdr * msg,
 
 Action *
 MultiCastPeer::RecvFrom_re(Continuation * cont, void *token,
-                           IOBufferBlock * bufblock, int len, struct sockaddr * from, socklen_t *fromlen)
+                           IOBufferBlock * bufblock, int len, sockaddr_storage * from, socklen_t *fromlen)
 {
   NOWARN_UNUSED(bufblock);
   Action *a = udpNet.recvfrom_re(cont, token,
@@ -1075,7 +1075,7 @@ MultiCastPeer::ExpectedReplies(BitMap * expected_replies_list)
 }
 
 int
-MultiCastPeer::ValidSender(struct sockaddr_in *sa)
+MultiCastPeer::ValidSender(sockaddr_storage *sa)
 {
   // TBD: Use hash function
   // Make sure sockaddr_in corresponds to a defined peer in the
@@ -1093,7 +1093,7 @@ MultiCastPeer::ValidSender(struct sockaddr_in *sa)
 }
 
 void
-MultiCastPeer::LogSendMsg(ICPMsg_t * m, struct sockaddr_in *sa)
+MultiCastPeer::LogSendMsg(ICPMsg_t * m, sockaddr_storage *sa)
 {
   // Note: ICPMsg_t (m) is in network byte order
   if (sa) {

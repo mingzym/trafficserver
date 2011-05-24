@@ -1,6 +1,6 @@
 /** @file
 
-  A brief file description
+  Loading @c IpMap from a configuration file.
 
   @section license License
 
@@ -21,33 +21,11 @@
   limitations under the License.
  */
 
-#ifndef _P_CACHE_H__
-#define _P_CACHE_H__
+// Copied from IPRange.cc for backwards compatibility.
 
-#ifndef INLINE_CC
-#undef  TS_INLINE
-#define TS_INLINE inline
-#endif
+class IpMap; // declare in name only.
 
-#define PATH_NAME_MAX 511
-#include "libts.h"
-#include "P_EventSystem.h"
-#include "P_AIO.h"
-#include <records/I_RecProcess.h>
-
-#ifdef HTTP_CACHE
-#include "HTTP.h"
-#include "MIME.h"
-#include "MimeTable.h"
-#include "HttpTransactCache.h"
-#endif
-
-#include "I_Cache.h"
-#include "P_CacheDisk.h"
-#include "P_CacheDir.h"
-#include "P_RamCache.h"
-#include "P_CacheVol.h"
-#include "P_CacheInternal.h"
-#include "P_CacheHosting.h"
-#include "P_CacheHttp.h"
-#endif /* _P_CACHE_H */
+// Returns 0 if successful, error string otherwise
+char * Load_IpMap_From_File(IpMap* map, int fd, const char *key_str);
+// Returns 0 if successful, error string otherwise
+char *Load_IpMap_From_File(IpMap* map, FILE* f, const char *key_str);

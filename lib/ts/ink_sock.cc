@@ -164,12 +164,12 @@ safe_ioctl(int fd, int request, char *arg)
 }
 
 int
-safe_bind(int s, struct sockaddr *name, int namelen)
+safe_bind(int s, sockaddr_storage const* name, int namelen)
 {
   int r;
   CHECK_PLAUSIBLE_SOCKADDR(name, __FILE__, __LINE__);
   do {
-    r = bind(s, name, namelen);
+    r = bind(s, ink_inet_sa_cast(name), namelen);
   } while (r < 0 && (errno == EAGAIN || errno == EINTR));
   return r;
 }
@@ -185,11 +185,11 @@ safe_listen(int s, int backlog)
 }
 
 int
-safe_getsockname(int s, struct sockaddr *name, int *namelen)
+safe_getsockname(int s, sockaddr_storage *name, int *namelen)
 {
   int r;
   do {
-    r = getsockname(s, name, (socklen_t *) namelen);
+    r = getsockname(s, ink_inet_sa_cast(name), reinterpret_cast<socklen_t *>(namelen));
   } while (r < 0 && (errno == EAGAIN || errno == EINTR));
   return r;
 }

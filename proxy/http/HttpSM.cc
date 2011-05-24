@@ -2224,7 +2224,7 @@ HttpSM::state_icp_lookup(int event, void *data)
   case ICP_LOOKUP_FOUND:
     Debug("http", "ICP says ICP_LOOKUP_FOUND");
     t_state.icp_lookup_success = true;
-    t_state.icp_ip_result = *(struct sockaddr_in *) data;
+    t_state.icp_ip_result = *(sockaddr_storage *) data;
 
 /*
 *  Disable ICP loop detection since the Cidera network

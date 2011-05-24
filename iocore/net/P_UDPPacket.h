@@ -210,7 +210,7 @@ UDPPacket::setArrivalTime(ink_hrtime t)
 }
 
 TS_INLINE UDPPacket *
-new_UDPPacket(struct sockaddr_in *to, ink_hrtime when, char *buf, int len)
+new_UDPPacket(sockaddr_storage *to, ink_hrtime when, char *buf, int len)
 {
   UDPPacketInternal *p = udpPacketAllocator.alloc();
 
@@ -233,7 +233,7 @@ new_UDPPacket(struct sockaddr_in *to, ink_hrtime when, char *buf, int len)
 }
 
 TS_INLINE UDPPacket *
-new_UDPPacket(struct sockaddr_in * to, ink_hrtime when, IOBufferBlock * buf, int len)
+new_UDPPacket(sockaddr_storage * to, ink_hrtime when, IOBufferBlock * buf, int len)
 {
   (void) len;
   UDPPacketInternal *p = udpPacketAllocator.alloc();
@@ -255,7 +255,7 @@ new_UDPPacket(struct sockaddr_in * to, ink_hrtime when, IOBufferBlock * buf, int
 }
 
 TS_INLINE UDPPacket *
-new_UDPPacket(struct sockaddr_in * to, ink_hrtime when, Ptr<IOBufferBlock> buf)
+new_UDPPacket(sockaddr_storage * to, ink_hrtime when, Ptr<IOBufferBlock> buf)
 {
   UDPPacketInternal *p = udpPacketAllocator.alloc();
 
@@ -277,7 +277,7 @@ new_UDPPacket(ink_hrtime when, Ptr<IOBufferBlock> buf)
 }
 
 TS_INLINE UDPPacket *
-new_incoming_UDPPacket(struct sockaddr_in * from, char *buf, int len)
+new_incoming_UDPPacket(sockaddr_storage * from, char *buf, int len)
 {
   UDPPacketInternal *p = udpPacketAllocator.alloc();
 

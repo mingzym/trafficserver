@@ -64,7 +64,7 @@ struct SocketManager
   int64_t pread(int fd, void *buf, int len, off_t offset, char *tag = NULL);
 
   int recv(int s, void *buf, int len, int flags);
-  int recvfrom(int fd, void *buf, int size, int flags, struct sockaddr *addr, socklen_t *addrlen);
+  int recvfrom(int fd, void *buf, int size, int flags, sockaddr_storage *addr, socklen_t *addrlen);
 
   int64_t write(int fd, void *buf, int len, void *pOLP = NULL);
   int64_t writev(int fd, struct iovec *vector, size_t count);
@@ -72,7 +72,7 @@ struct SocketManager
   int64_t pwrite(int fd, void *buf, int len, off_t offset, char *tag = NULL);
 
   int send(int fd, void *buf, int len, int flags);
-  int sendto(int fd, void *buf, int len, int flags, struct sockaddr *to, int tolen);
+  int sendto(int fd, void *buf, int len, int flags, sockaddr_storage *to, int tolen);
   int sendmsg(int fd, struct msghdr *m, int flags, void *pOLP = 0);
   int64_t lseek(int fd, off_t offset, int whence);
   int fstat(int fd, struct stat *);
@@ -105,7 +105,7 @@ struct SocketManager
   int dup(int s);
 
   // result is the fd or -errno
-  int accept(int s, struct sockaddr *addr, socklen_t *addrlen);
+  int accept(int s, sockaddr_storage* addr, socklen_t *addrlen);
 
   // manipulate socket buffers
   int get_sndbuf_size(int s);
@@ -113,13 +113,13 @@ struct SocketManager
   int set_sndbuf_size(int s, int size);
   int set_rcvbuf_size(int s, int size);
 
-  int getsockname(int s, struct sockaddr *, socklen_t *);
+  int getsockname(int s, sockaddr_storage *, socklen_t *);
 
   /** Close the socket.
       @return 0 if successful, -errno on error.
    */
   int close(int sock);
-  int ink_bind(int s, struct sockaddr *name, int namelen, short protocol = 0);
+  int ink_bind(int s, sockaddr_storage const* name, int namelen, short protocol = 0);
 
   int pagesize;
 

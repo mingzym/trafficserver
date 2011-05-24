@@ -784,7 +784,7 @@ public:
     // components is a byte, so:
     // 0x25364758 = 0x25.0x36.0x47.0x58 = 37.54.71.88 in decimal.
     unsigned int ip;
-    struct sockaddr_storage addr;
+    sockaddr_storage addr;
 
     // port to connect to, except for client
     // connection where it is port on proxy
@@ -960,7 +960,7 @@ public:
     int64_t internal_msg_buffer_index;      // out
 
     bool icp_lookup_success;    // in
-    struct sockaddr_in icp_ip_result;   // in
+    sockaddr_storage icp_ip_result;   // in
 
     int scheme;                 // out
     int next_hop_scheme;        // out

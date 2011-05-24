@@ -492,13 +492,13 @@ MuxClientVC::get_socket()
   return 0;
 }
 
-const struct sockaddr_in &
+const sockaddr_storage &
 MuxClientVC::get_local_addr()
 {
   return mux_vc->local_addr;
 }
 
-const struct sockaddr_in &
+const sockaddr_storage &
 MuxClientVC::get_remote_addr()
 {
   return mux_vc->remote_addr;

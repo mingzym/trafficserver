@@ -761,10 +761,11 @@ UnixNetVConnection::UnixNetVConnection()
     next_inactivity_timeout_at(0),
 #endif
     active_timeout(NULL), nh(NULL),
-    id(0), ip(0), accept_port(0), port(0), flags(0), recursion(0), submit_time(0), oob_ptr(0),
+    id(0), accept_port(0), flags(0), recursion(0), submit_time(0), oob_ptr(0),
     from_accept_thread(false)
 {
-  memset(&local_sa, 0, sizeof local_sa);
+  memset(&local_addr, 0, sizeof local_addr);
+  memset(&server_addr, 0, sizeof server_addr);
   SET_HANDLER((NetVConnHandler) & UnixNetVConnection::startEvent);
 }
 
@@ -1059,7 +1060,7 @@ UnixNetVConnection::connectUp(EThread *t)
       free(t);
       return CONNECT_FAILURE;
     }
-    res = con.connect(ip, port, options);
+    res = con.connect(&server_addr, options);
   }
 
   if (res) {

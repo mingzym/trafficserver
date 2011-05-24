@@ -45,9 +45,7 @@ TS_INLINE void
 NetVCOptions::reset()
 {
   ip_proto = USE_TCP;
-  local_port = 0;
-  port_binding = ANY_PORT;
-  local_addr = 0;
+  ink_inet_invalidate(local_addr);
   addr_binding = ANY_ADDR;
   f_blocking = false;
   f_blocking_connect = false;
@@ -204,10 +202,12 @@ public:
   EventIO ep;
   NetHandler *nh;
   unsigned int id;
-  unsigned int ip;
+//  unsigned int ip;
   //  unsigned int _interface; // 'interface' conflicts with the C++ keyword
   int accept_port;
-  int port;
+//  int port;
+  // replaces @a ip and @a port.
+  sockaddr_storage server_addr; /// Server address and port.
 
   union
   {
@@ -216,11 +216,12 @@ public:
 #define NET_VC_SHUTDOWN_WRITE 2
     struct
     {
-      unsigned int got_local_sa:1;
+      unsigned int got_local_addr:1;
       unsigned int shutdown:2;
     } f;
   };
-  struct sockaddr_in local_sa;
+  /// Local address of connection.
+  sockaddr_storage local_addr;
 
   Connection con;
   int recursion;
@@ -249,14 +250,14 @@ typedef int (UnixNetVConnection::*NetVConnHandler) (int, void *);
 TS_INLINE void
 UnixNetVConnection::set_remote_addr()
 {
-  remote_addr = con.sa;
+  ink_inet_copy(remote_addr, con.addr);
 }
 
 TS_INLINE void
 UnixNetVConnection::set_local_addr()
 {
   int local_sa_size = sizeof(local_addr);
-  safe_getsockname(con.fd, (sockaddr *) & local_addr, &local_sa_size);
+  safe_getsockname(con.fd, &local_addr, &local_sa_size);
 }
 
 TS_INLINE ink_hrtime

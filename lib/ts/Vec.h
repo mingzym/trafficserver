@@ -48,16 +48,20 @@ class Vec {
   int           i;      // size index for sets, reserve for vectors
   C             *v;
   C             e[VEC_INTEGRAL_SIZE];
+
+  typedef C element_type; ///< Type of elements in this container.
+  typedef C* iterator; ///< Iterator type for STL-like access.
   
   Vec();
   Vec<C,A,S>(const Vec<C,A,S> &vv);
   Vec<C,A,S>(const C c);
   ~Vec();
 
-  C &operator[](int i) const { return v[i]; }
+  C &operator[](int i) { return v[i]; }
+  C const&operator[](int i) const { return v[i]; }
 
-  C get(int i);
-  void add(C a);  
+  C get(int i) const;
+  void add(C const& a);  
   void push_back(C a) { add(a); } // std::vector name
   int add_exclusive(C a);
   C& add();
@@ -102,7 +106,10 @@ class Vec {
   void push(C a) { insert(0, a); }
   void reverse();
   void reserve(int n);
-  C* end() const { return v + n; }
+  C* begin() { return v; }
+  C const* begin() const { return v; }
+  C* end() { return v + n; }
+  C const* end() const { return v + n; }
   C &first() const { return v[0]; }
   C &last() const { return v[n-1]; }
   Vec<C,A,S>& operator=(Vec<C,A,S> &v) { this->copy(v); return *this; }
@@ -111,6 +118,7 @@ class Vec {
   int write(int fd);
   int read(int fd);
   void qsort(bool (*lt)(C,C));
+  void qsort(bool (*lt)(C const&,C const&));
   
   // private:
   void move_internal(Vec<C,A,S> &v);
@@ -182,7 +190,7 @@ Vec<C,A,S>::Vec(C c) {
 }
 
 template <class C, class A, int S> inline C
-Vec<C,A,S>::get(int i) {
+Vec<C,A,S>::get(int i) const {
   if (i < n && i >= 0)
     return v[i];
   else
@@ -190,7 +198,7 @@ Vec<C,A,S>::get(int i) {
 }
 
 template <class C, class A, int S> inline void 
-Vec<C,A,S>::add(C a) {
+Vec<C,A,S>::add(C const& a) {
   if (n & (VEC_INTEGRAL_SIZE-1))
     v[n++] = a;
   else if (!v)
@@ -770,7 +778,7 @@ inline void qsort_Vec(C *left, C *right, bool (*lt)(C,C)) {
 }
 
 template <class C> 
-inline void qsort_VecRef(C *left, C *right, bool (*lt)(C&,C&)) {
+inline void qsort_VecRef(C *left, C *right, bool (*lt)(C const&,C const&)) {
  Lagain:
   if (right - left < 5) {
     for (C *y = right - 1; y > left; y--) {
@@ -809,6 +817,12 @@ template <class C, class A, int S>
 inline void Vec<C,A,S>::qsort(bool (*lt)(C,C)) {
   if (n)
     qsort_Vec<C>(&v[0], end(), lt);
+}
+
+template <class C, class A, int S> 
+inline void Vec<C,A,S>::qsort(bool (*lt)(C const&,C const&)) {
+  if (n)
+    qsort_VecRef<C>(&v[0], end(), lt);
 }
 
 void test_vec();

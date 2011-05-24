@@ -50,7 +50,7 @@
 DNSConnection::DNSConnection():
   fd(NO_FD), num(0), generator((uint32_t)((uintptr_t)time(NULL) ^ (uintptr_t) this)), handler(NULL)
 {
-  memset(&sa, 0, sizeof(struct sockaddr_in));
+  memset(&sa, 0, sizeof(sockaddr_storage));
 }
 
 DNSConnection::~DNSConnection()
@@ -79,21 +79,22 @@ DNSConnection::trigger()
 }
 
 int
-DNSConnection::connect(unsigned int ip, int port,
+DNSConnection::connect(sockaddr_storage const* target,
                        bool non_blocking_connect, bool use_tcp, bool non_blocking, bool bind_random_port)
 {
   ink_assert(fd == NO_FD);
 
   int res = 0;
   short Proto;
+  uint8_t family = target->ss_family;
 
   if (use_tcp) {
     Proto = IPPROTO_TCP;
-    if ((res = socketManager.socket(AF_INET, SOCK_STREAM, 0)) < 0)
+    if ((res = socketManager.socket(family, SOCK_STREAM, 0)) < 0)
       goto Lerror;
   } else {
     Proto = IPPROTO_UDP;
-    if ((res = socketManager.socket(AF_INET, SOCK_DGRAM, 0)) < 0)
+    if ((res = socketManager.socket(family, SOCK_DGRAM, 0)) < 0)
       goto Lerror;
   }
 
@@ -102,15 +103,17 @@ DNSConnection::connect(unsigned int ip, int port,
   if (bind_random_port) {
     int retries = 0;
     while (retries++ < 10000) {
-      struct sockaddr_in bind_sa;
-      memset(&sa, 0, sizeof(bind_sa));
-      bind_sa.sin_family = AF_INET;
-      bind_sa.sin_addr.s_addr = INADDR_ANY;
+      sockaddr_storage bind_sa;
+      ink_inet_init(bind_sa);
+      if (ink_inet_is_ip6(target))
+        ink_inet_ip6_addr_cast(&bind_sa) = in6addr_any;
+      else
+        ink_inet_ip4_set(&bind_sa, INADDR_ANY);
       uint32_t p = generator.random();
-      p = (uint16_t)((p % (LAST_RANDOM_PORT - FIRST_RANDOM_PORT)) + FIRST_RANDOM_PORT);
-      bind_sa.sin_port = htons(p);
+      p = static_cast<uint16_t>((p % (LAST_RANDOM_PORT - FIRST_RANDOM_PORT)) + FIRST_RANDOM_PORT);
+      ink_inet_port_cast(bind_sa) = htons(p);
       Debug("dns", "random port = %u\n", p);
-      if ((res = socketManager.ink_bind(fd, (struct sockaddr *) &bind_sa, sizeof(bind_sa), Proto)) < 0) {
+      if ((res = socketManager.ink_bind(fd, &bind_sa, sizeof(bind_sa), Proto)) < 0) {
         continue;
       }
       goto Lok;
@@ -118,11 +121,6 @@ DNSConnection::connect(unsigned int ip, int port,
     Warning("unable to bind random DNS port");
   Lok:;
   }
-
-  sa.sin_family = AF_INET;
-  sa.sin_port = htons(port);
-  sa.sin_addr.s_addr = ip;
-  memset(&sa.sin_zero, 0, 8);
 
   if (non_blocking_connect)
     if ((res = safe_nonblocking(fd)) < 0)
@@ -143,7 +141,7 @@ DNSConnection::connect(unsigned int ip, int port,
     goto Lerror;
 #endif
 
-  res =::connect(fd, (struct sockaddr *) &sa, sizeof(struct sockaddr_in));
+  res =::connect(fd, ink_inet_sa_cast(target), sizeof(*target));
 
   if (!res || ((res < 0) && (errno == EINPROGRESS || errno == EWOULDBLOCK))) {
     if (!non_blocking_connect && non_blocking)

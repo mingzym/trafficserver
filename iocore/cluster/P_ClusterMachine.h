@@ -64,13 +64,17 @@ struct ClusterMachine: public Server
   // The network address of the current machine,
   // stored in network byte order
   //
-  unsigned int ip;
-  int cluster_port;
+//  unsigned int ip;
+//  int cluster_port;
+  sockaddr_storage ip;
 
     Link<ClusterMachine> link;
 
   // default for localhost
-    ClusterMachine(char *hostname = NULL, unsigned int ip = 0, int acluster_port = 0);
+    ClusterMachine(char *hostname = NULL,
+//      unsigned int ip = 0, int acluster_port = 0
+      sockaddr_storage const* ip = 0
+    );
    ~ClusterMachine();
 
   // Cluster message protocol version
@@ -84,18 +88,30 @@ struct ClusterMachine: public Server
 
 struct MachineListElement
 {
-  unsigned int ip;
-  int port;
+  sockaddr_storage ip;
+//  unsigned int ip;
+//  int port;
 };
 struct MachineList
 {
   int n;
   MachineListElement machine[1];
+/*
   MachineListElement *find(unsigned int ip, int port = 0) {
     for (int i = 0; i < n; i++)
       if (machine[i].ip == ip && (!port || machine[i].port == port))
         return &machine[i];
     return NULL;
+  }
+*/
+  MachineListElement* findByAddr(sockaddr_storage const* addr) {
+    MachineListElement* elt = machine;
+    MachineListElement* limit = machine + n;
+    for ( ; elt < limit ; ++elt) {
+      if (0 == ink_inet_cmp(addr, &elt->ip))
+        return elt;
+    }
+    return 0;
   }
 };
 

@@ -64,7 +64,7 @@ new_event_client()
   for (int i = 0; i < NUM_EVENTS; i++)
     ele->events_registered[i] = 0;
 
-  ele->adr = (struct sockaddr *) xmalloc(sizeof(struct sockaddr));
+  ele->adr = (sockaddr_storage *) xmalloc(sizeof(sockaddr_storage));
   if (!ele->adr)
     return NULL;
 
@@ -279,7 +279,7 @@ event_callback_main(void *arg)
   InkHashTableIteratorState con_state;  // used to iterate through hash table
   int fds_ready;                // return value for select go here
   struct timeval timeout;
-  int addr_len = (sizeof(struct sockaddr));
+  int addr_len = (sizeof(sockaddr_storage));
 
   while (1) {
     // LINUX fix: to prevent hard-spin reset timeout on each loop

@@ -45,16 +45,17 @@ unsigned int const IP_TRANSPARENT = 19;
 // Functions
 //
 int
-Connection::setup_mc_send(unsigned int mc_ip, int mc_port,
-                          unsigned int my_ip, int my_port,
-                          bool non_blocking, unsigned char mc_ttl, bool mc_loopback, Continuation * c)
-{
+Connection::setup_mc_send(
+  sockaddr_storage const* mc_addr,
+  sockaddr_storage const* my_addr,
+  bool non_blocking, unsigned char mc_ttl, bool mc_loopback, Continuation * c
+) {
   (void) c;
   ink_assert(fd == NO_FD);
   int res = 0;
   int enable_reuseaddr = 1;
 
-  if ((res = socketManager.mc_socket(AF_INET, SOCK_DGRAM, 0, non_blocking)) < 0)
+  if ((res = socketManager.mc_socket(my_addr->ss_family, SOCK_DGRAM, 0, non_blocking)) < 0)
     goto Lerror;
 
   fd = res;
@@ -63,19 +64,11 @@ Connection::setup_mc_send(unsigned int mc_ip, int mc_port,
     goto Lerror;
   }
 
-  struct sockaddr_in bind_sa;
-  memset(&bind_sa, 0, sizeof(bind_sa));
-  bind_sa.sin_family = AF_INET;
-  bind_sa.sin_port = htons(my_port);
-  bind_sa.sin_addr.s_addr = my_ip;
-  if ((res = socketManager.ink_bind(fd, (struct sockaddr *) &bind_sa, sizeof(bind_sa), IPPROTO_UDP)) < 0) {
+  if ((res = socketManager.ink_bind(fd, my_addr, sizeof(*my_addr), IPPROTO_UDP)) < 0) {
     goto Lerror;
   }
 
-  sa.ss_family = AF_INET;
-  ((struct sockaddr_in *)(&sa))->sin_port = htons(mc_port);
-  ((struct sockaddr_in *)(&sa))->sin_addr.s_addr = mc_ip;
-  memset(&(((struct sockaddr_in *)(&sa))->sin_zero), 0, 8);
+  ink_inet_copy(&addr, mc_addr);
 
 #ifdef SET_CLOSE_ON_EXEC
   if ((res = safe_fcntl(fd, F_SETFD, 1)) < 0)
@@ -108,16 +101,17 @@ Lerror:
 
 
 int
-Connection::setup_mc_receive(unsigned int mc_ip, int mc_port,
-                             bool non_blocking, Connection * sendChan, Continuation * c)
-{
+Connection::setup_mc_receive(
+  sockaddr_storage const* mc_addr,
+  bool non_blocking, Connection * sendChan, Continuation * c
+) {
   ink_assert(fd == NO_FD);
   (void) sendChan;
   (void) c;
   int res = 0;
   int enable_reuseaddr = 1;
 
-  if ((res = socketManager.socket(AF_INET, SOCK_DGRAM, 0)) < 0)
+  if ((res = socketManager.socket(mc_addr->ss_family, SOCK_DGRAM, 0)) < 0)
     goto Lerror;
 
   fd = res;
@@ -130,25 +124,24 @@ Connection::setup_mc_receive(unsigned int mc_ip, int mc_port,
   if ((res = safe_setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (char *) &enable_reuseaddr, sizeof(enable_reuseaddr)) < 0))
     goto Lerror;
 
-  memset(&sa, 0, sizeof(sa));
-  sa.ss_family = AF_INET;
-  ((struct sockaddr_in *)(&sa))->sin_addr.s_addr = mc_ip;
-  ((struct sockaddr_in *)(&sa))->sin_port = htons(mc_port);
+  ink_inet_copy(&addr, mc_addr);
 
-  if ((res = socketManager.ink_bind(fd, (struct sockaddr *) &sa, sizeof(sa), IPPROTO_TCP)) < 0)
+  if ((res = socketManager.ink_bind(fd, &addr, sizeof(addr), IPPROTO_TCP)) < 0)
     goto Lerror;
 
   if (non_blocking)
     if ((res = safe_nonblocking(fd)) < 0)
       goto Lerror;
 
-  struct ip_mreq mc_request;
-  // Add ourselves to the MultiCast group
-  mc_request.imr_multiaddr.s_addr = mc_ip;
-  mc_request.imr_interface.s_addr = htonl(INADDR_ANY);
+  if (ink_inet_is_ip4(addr)) {
+    struct ip_mreq mc_request;
+    // Add ourselves to the MultiCast group
+    mc_request.imr_multiaddr.s_addr = ink_inet_ip4_cast(mc_addr)->sin_addr.s_addr;
+    mc_request.imr_interface.s_addr = htonl(INADDR_ANY);
 
-  if ((res = safe_setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *) &mc_request, sizeof(mc_request)) < 0))
-    goto Lerror;
+    if ((res = safe_setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *) &mc_request, sizeof(mc_request)) < 0))
+      goto Lerror;
+  }
   return 0;
 
 Lerror:
@@ -220,17 +213,26 @@ Connection::open(NetVCOptions const& opt)
   ink_assert(fd == NO_FD);
   int enable_reuseaddr = 1; // used for sockopt setting
   int res = 0; // temp result
-  uint32_t local_addr = NetVCOptions::ANY_ADDR == opt.addr_binding
-    ? INADDR_ANY
-    : opt.local_addr;
-  uint16_t local_port = NetVCOptions::ANY_PORT == opt.port_binding
-    ? 0
-    : opt.local_port;
+  sockaddr_storage local_addr;
   int sock_type = NetVCOptions::USE_UDP == opt.ip_proto
     ? SOCK_DGRAM
     : SOCK_STREAM;
+  int protocol = AF_INET;
 
-  res = socketManager.socket(AF_INET, sock_type, 0);
+  // copy it local so we can (potentially) modify it.
+  ink_inet_copy(local_addr, opt.local_addr);
+
+  if (ink_inet_is_ip6(opt.local_addr)) {
+    protocol = opt.local_addr.ss_family;
+    if (NetVCOptions::ANY_ADDR == opt.addr_binding)
+      ink_inet_ip6_cast(local_addr).sin6_addr = in6addr_any;
+      ;
+  } else {
+    if (NetVCOptions::ANY_ADDR == opt.addr_binding)
+      ink_inet_ip4_cast(local_addr).sin_addr.s_addr = INADDR_ANY;
+  }
+
+  res = socketManager.socket(protocol, sock_type, 0);
   if (-1 == res) return -errno;
 
   fd = res;
@@ -279,7 +281,9 @@ Connection::open(NetVCOptions const& opt)
     }
   }
 
-  if (NetVCOptions::FOREIGN_ADDR == opt.addr_binding && local_addr) {
+  if (NetVCOptions::FOREIGN_ADDR == opt.addr_binding
+    && ink_inet_is_valid(local_addr)
+  ) {
     static char const * const DEBUG_TEXT = "::open setsockopt() IP_TRANSPARENT";
 #if TS_USE_TPROXY
     int value = 1;
@@ -296,15 +300,7 @@ Connection::open(NetVCOptions const& opt)
 #endif
   }
 
-  // Local address/port.
-  struct sockaddr_in bind_sa;
-  memset(&bind_sa, 0, sizeof(bind_sa));
-  bind_sa.sin_family = AF_INET;
-  bind_sa.sin_port = htons(local_port);
-  bind_sa.sin_addr.s_addr = local_addr;
-  if (-1 == socketManager.ink_bind(fd,
-				   reinterpret_cast<struct sockaddr *>(&bind_sa),
-				   sizeof(bind_sa)))
+  if (-1 == socketManager.ink_bind(fd, &local_addr, sizeof(local_addr)))
     return -errno;
 
   cleanup.reset();
@@ -313,20 +309,19 @@ Connection::open(NetVCOptions const& opt)
 }
 
 int
-Connection::connect(uint32_t addr, uint16_t port, NetVCOptions const& opt) {
+Connection::connect(sockaddr_storage const* target, NetVCOptions const& opt) {
   ink_assert(fd != NO_FD);
   ink_assert(is_bound);
   ink_assert(!is_connected);
 
   int res;
 
-  this->setRemote(addr, port);
+  this->setRemote(target);
 
   cleaner<Connection> cleanup(this, &Connection::_cleanup); // mark for close until we succeed.
 
-  res = ::connect(fd,
-		  reinterpret_cast<struct sockaddr *>(&sa),
-		  sizeof(struct sockaddr_in));
+  res = ::connect(fd, ink_inet_sa_cast(target), sizeof(*target));
+
   // It's only really an error if either the connect was blocking
   // or it wasn't blocking and the error was other than EINPROGRESS.
   // (Is EWOULDBLOCK ok? Does that start the connect?)

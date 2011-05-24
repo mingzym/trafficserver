@@ -144,7 +144,7 @@ LogAccessHttp::marshal_client_host_ip(char *buf)
   int len = INK_MIN_ALIGN;
   char buffer[INET6_ADDRSTRLEN];
 
-  str = const_cast<char*>(ink_inet_ntop(((struct sockaddr *)&(m_http_sm->t_state.client_info.addr)), buffer, sizeof(buffer)));
+  str = const_cast<char*>(ink_inet_ntop(((sockaddr_storage *)&(m_http_sm->t_state.client_info.addr)), buffer, sizeof(buffer)));
   len = LogAccess::strlen(str);
 
   if (buf) {
