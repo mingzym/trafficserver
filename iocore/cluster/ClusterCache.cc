@@ -74,7 +74,7 @@ static ink_hrtime cache_cluster_timeout = CACHE_CLUSTER_TIMEOUT;
 ///////////////////
 // Declarations  //
 ///////////////////
-static CacheContinuation *find_cache_continuation(unsigned int, unsigned int);
+static CacheContinuation *find_cache_continuation(unsigned int, sockaddr_storage const* ip);
 
 static unsigned int new_cache_sequence_number();
 
@@ -412,7 +412,8 @@ CacheContinuation::do_op(Continuation * c, ClusterMachine * mp, void *args,
 
     // set up sequence number so we can find this continuation
 
-    cc->target_ip = mp->ip;
+//    cc->target_ip = mp->ip;
+    ink_inet_copy(cc->target_ip, mp->ip);
     cc->seq_number = new_cache_sequence_number();
 
     // establish timeout for cache op
@@ -2051,7 +2052,7 @@ cache_op_result_ClusterFunction(ClusterMachine * from, void *d, int l)
     // Find it in pending list
 
     CacheContinuation *c = find_cache_continuation(msg->seq_number,
-                                                   from->ip);
+                                                   &from->ip);
     if (!c) {
       // Reply took to long, response no longer expected.
       MUTEX_UNTAKE_LOCK(remoteCacheContQueueMutex[hash], thread);
@@ -2092,7 +2093,8 @@ cache_op_result_ClusterFunction(ClusterMachine * from, void *d, int l)
     CacheContinuation * c = CacheContinuation::cacheContAllocator_alloc();
     c->mutex = new_ProxyMutex();
     c->seq_number = msg->seq_number;
-    c->target_ip = from->ip;
+//    c->target_ip = from->ip;
+    ink_inet_copy(c->target_ip, from->ip);
     SET_CONTINUATION_HANDLER(c, (CacheContHandler)
                              & CacheContinuation::handleReplyEvent);
     c->start_time = ink_get_hrtime();
@@ -2133,7 +2135,7 @@ CacheContinuation::handleReplyEvent(int event, Event * e)
 
   // See if this response is still expected
 
-  CacheContinuation *c = find_cache_continuation(seq_number, target_ip);
+  CacheContinuation *c = find_cache_continuation(seq_number, &target_ip);
   if (c) {
 
     // Acquire the lock to the continuation mutex
@@ -2241,7 +2243,7 @@ retry:
       }
       // a timeout has occurred
 
-      if (find_cache_continuation(seq_number, target_ip)) {
+      if (find_cache_continuation(seq_number, &target_ip)) {
         // Valid timeout
         MUTEX_RELEASE(queuelock);
 
@@ -2936,13 +2938,13 @@ CacheContinuation::callbackEvent(int event, Event * e)
 //   Requires taking the lock on the remoteCacheContQueueMutex first.
 ////////////////////////////////////////////////////////////////////////
 static CacheContinuation *
-find_cache_continuation(unsigned int seq_number, unsigned int from_ip)
+find_cache_continuation(unsigned int seq_number, sockaddr_storage const* from_ip)
 {
   unsigned int hash = FOLDHASH(from_ip, seq_number);
   CacheContinuation *c = NULL;
   CacheContinuation *lastc = NULL;
   for (c = (CacheContinuation *) remoteCacheContQueue[hash].head; c; c = (CacheContinuation *) c->link.next) {
-    if (seq_number == c->seq_number && from_ip == c->target_ip) {
+    if (seq_number == c->seq_number && 0 == ink_inet_cmp(from_ip, &c->target_ip) ) {
       if (lastc) {
         ink_release_assert(c->link.prev == lastc);
       } else {

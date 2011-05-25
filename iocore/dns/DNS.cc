@@ -348,8 +348,17 @@ DNSEntry::init(const char *x, int len, int qtype_arg,
       qname_len = strlen(qname);
     }
   } else {                    //T_PTR
-      if (static_cast<int>(INK_IP6_SIZE) == len) make_ipv6_ptr(x, qname);
-      else make_ipv4_ptr(x, qname);
+    if (sizeof(sockaddr_storage) == len) {
+      sockaddr_storage const* ss = reinterpret_cast<sockaddr_storage const*>(x);
+      if (ink_inet_is_ip6(ss))
+        make_ipv6_ptr(reinterpret_cast<char const*>(ink_inet_ip6_cast(ss)), qname);
+      else
+        make_ipv4_ptr(reinterpret_cast<char const*>(&ink_inet_ip4_cast(ss)->sin_addr), qname);
+    } else if (static_cast<int>(INK_IP6_SIZE) == len) {
+      make_ipv6_ptr(x, qname);
+    } else {
+      make_ipv4_ptr(x, qname);
+    }
   }
 
   SET_HANDLER((DNSEntryHandler) & DNSEntry::mainEvent);

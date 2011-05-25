@@ -67,6 +67,10 @@ struct ClusterMachine: public Server
 //  unsigned int ip;
 //  int cluster_port;
   sockaddr_storage ip;
+  /// Unique ID for handles
+  uint32_t id;
+  /// Global auto-increment id counter
+  static uint32_t nextId;
 
     Link<ClusterMachine> link;
 

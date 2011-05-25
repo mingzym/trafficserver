@@ -43,6 +43,7 @@
 /// Size in bytes of an IPv6 address.
 size_t const INK_IP6_SIZE = 16;
 
+# if 0
 struct ink_gethostbyname_r_data {
   int herrno;
   struct hostent ent;
@@ -97,6 +98,7 @@ struct hostent *ink_gethostbyaddr_r(char *ip, int len, int type, ink_gethostbyad
 
 */
 inkcoreapi uint32_t ink_inet_addr(const char *s);
+# endif
 
 /** Write a null terminated string for @a addr to @a dst.
     A buffer of size INET6_ADDRSTRLEN suffices, including a terminating nul.
@@ -505,10 +507,26 @@ inline void ink_inet_ip4_set(
   ink_inet_ip4_set(&ss, ip4, port);
 }
 
+/** Write data to address.
+    This presumes that the protocol family is set in @a ss
+    and that @a src contains an address in that family.
+ */
+inline void ink_inet_set(
+  sockaddr_storage* ss, ///< Destination storage.
+  void* src ///< Source data
+) {
+  if (AF_INET == ss->ss_family) {
+    memcpy(&ink_inet_ip4_addr_cast(ss), src, sizeof(in_addr_t));
+  } else if (AF_INET6 == ss->ss_family) {
+    memcpy(ink_inet_ip6_cast(ss), src, sizeof(in6_addr));
+  }
+}
+
 /** Just the address.
     In some cases we want to store just the address and not the
     ancillary information (such as port, or flow data) in
-    @c sockaddr_storage.
+    @c sockaddr_storage. There are a couple of cases where this
+    makes sense.
     @note This is not easily used as an address for system calls.
 */
 struct InkInetAddr {

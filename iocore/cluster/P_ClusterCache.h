@@ -170,6 +170,16 @@ struct ClusterConfiguration
         return machines[i];
     return NULL;
   }
+  ClusterMachine *findById(
+    uint32_t id
+  ) {
+    ClusterMachine** m = machines;
+    ClusterMachine** limit = m + n_machines;
+    for ( ; m < limit ; ++m ) {
+      if (id == (*m)->id) return *m;
+    }
+    return 0;
+  }
 
   //
   // Private

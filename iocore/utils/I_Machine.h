@@ -48,13 +48,13 @@ struct Machine
   char *hostname;               // name of the internet host
   int hostname_len;             // size of the string pointed to by hostname
 
-  unsigned int ip;              // IP address of the host (network order)
+  sockaddr_storage ip;              // IP address of the host (network order)
   char *ip_string;              // IP address of the host as a string.
   int ip_string_len;
   char *ip_hex_string;          // IP address of the host as a hex string
   int ip_hex_string_len;
 
-  Machine(char *hostname = 0, unsigned int ip = 0);
+  Machine(char *hostname = 0, sockaddr_storage const* ip = 0);
   ~Machine();
 };
 
@@ -64,7 +64,7 @@ struct Machine
   the current processor.
 
  */
-void create_this_machine(char *hostname = 0, unsigned int ip = 0);
+void create_this_machine(char *hostname = 0, sockaddr_storage const* ip = 0);
 
 /**
   Returns the Machine object created by create_this_machine().

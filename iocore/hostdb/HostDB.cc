@@ -424,7 +424,7 @@ HostDBProcessor::start(int)
 
 void
 HostDBContinuation::init(char *hostname, int len,
-                         int aip, int aport, INK_MD5 & amd5, Continuation * cont, void *pDS, bool is_srv, int timeout)
+                         sockaddr_storage const* aip, int aport, INK_MD5 & amd5, Continuation * cont, void *pDS, bool is_srv, int timeout)
 {
   if (hostname) {
     memcpy(name, hostname, len);
@@ -434,7 +434,8 @@ HostDBContinuation::init(char *hostname, int len,
   dns_lookup_timeout = timeout;
   namelen = len;
   is_srv_lookup = is_srv;
-  ip = aip;
+  ink_inet_copy(&ip, aip);
+//  ip = aip;
   port = aport;
   md5 = amd5;
   mutex = hostDB.lock_for_bucket((int) (fold_md5(md5) % hostDB.buckets));
@@ -540,7 +541,7 @@ Ldelete:
 
 
 HostDBInfo *
-probe(ProxyMutex *mutex, INK_MD5 & md5, char *hostname, int len, int ip, int port, void *pDS, bool ignore_timeout,
+probe(ProxyMutex *mutex, INK_MD5 & md5, char *hostname, int len, sockaddr_storage const* ip, int port, void *pDS, bool ignore_timeout,
       bool is_srv_lookup)
 {
   ink_debug_assert(this_ethread() == hostDB.lock_for_bucket((int) (fold_md5(md5) % hostDB.buckets))->thread_holding);
@@ -636,7 +637,7 @@ HostDBContinuation::insert(unsigned int attl)
 //
 Action *
 HostDBProcessor::getby(Continuation * cont,
-                       char *hostname, int len, int port, unsigned int ip, bool aforce_dns, int dns_lookup_timeout)
+                       char *hostname, int len, int port, sockaddr_storage const* ip, bool aforce_dns, int dns_lookup_timeout)
 {
   INK_MD5 md5;
   char *pServerLine = 0;
@@ -798,7 +799,8 @@ HostDBProcessor::getSRVbyname_imm(Continuation * cont, process_srv_info_pfn proc
 
     // If we can get the lock and a level 1 probe succeeds, return
     if (lock) {
-      HostDBInfo *r = probe(bucket_mutex, md5, hostname, len, 1, port, pDS, false, true);
+      // passing 0 instead of 1 for IP address.
+      HostDBInfo *r = probe(bucket_mutex, md5, hostname, len, 0, port, pDS, false, true);
       if (r) {
         Debug("hostdb", "immediate SRV answer for %s from hostdb", hostname);
         Debug("dns_srv", "immediate SRV answer for %s from hostdb", hostname);
@@ -912,14 +914,14 @@ HostDBProcessor::getbyname_imm(Continuation * cont, process_hostdb_info_pfn proc
 
 
 static void
-do_setby(HostDBInfo * r, HostDBApplicationInfo * app, char *hostname, unsigned int ip)
+do_setby(HostDBInfo * r, HostDBApplicationInfo * app, char *hostname, sockaddr_storage const* ip)
 {
   HostDBRoundRobin *rr = r->rr();
 
   if (rr) {
     ink_assert(hostname);
     for (int i = 0; i < rr->n; i++) {
-      if (rr->info[i].ip() == ip) {
+      if (0 == ink_inet_cmp(rr->info[i].ip(), ip)) {
         Debug("hostdb", "immediate setby for %s", hostname ? hostname : "<addr>");
         rr->info[i].app.allotment.application1 = app->allotment.application1;
         rr->info[i].app.allotment.application2 = app->allotment.application2;
@@ -927,7 +929,7 @@ do_setby(HostDBInfo * r, HostDBApplicationInfo * app, char *hostname, unsigned i
       }
     }
   } else {
-    if (r->reverse_dns || (!r->round_robin && r->ip() == ip)) {
+    if (r->reverse_dns || (!r->round_robin && 0 == ink_inet_cmp(r->ip(),ip))) {
       Debug("hostdb", "immediate setby for %s", hostname ? hostname : "<addr>");
       r->app.allotment.application1 = app->allotment.application1;
       r->app.allotment.application2 = app->allotment.application2;
@@ -937,7 +939,7 @@ do_setby(HostDBInfo * r, HostDBApplicationInfo * app, char *hostname, unsigned i
 
 
 void
-HostDBProcessor::setby(char *hostname, int len, int port, unsigned int ip, HostDBApplicationInfo * app)
+HostDBProcessor::setby(char *hostname, int len, int port, sockaddr_storage const* ip, HostDBApplicationInfo * app)
 {
   if (!hostdb_enable)
     return;
@@ -961,8 +963,17 @@ HostDBProcessor::setby(char *hostname, int len, int port, unsigned int ip, HostD
     //  to uint64_t dummy = ip*64*1024 for bug INKqa10029.
     //  Problem was that ip << 16 would not work for architectures with
     //  a different byte order. This takes cares of all byte orders.
-    uint64_t dummy = ((uint64_t) ip) * 64 * 1024;
-    md5.encodeBuffer((char *) &dummy, 8);
+    char buff[INK_IP6_SIZE + 2];
+    size_t n = 0;
+    buff[n++] = 0;
+    if (ink_inet_is_ip6(ip)) {
+      memcpy(buff + n, ink_inet_ip6_cast(ip), INK_IP6_SIZE);
+      n += INK_IP6_SIZE;
+    } else {
+      memcpy(buff + n, ink_inet_ip4_cast(ip), sizeof(in_addr_t));
+      n += sizeof(in_addr_t);
+    }
+    md5.encodeBuffer(buff, n);
   }
 
   // Attempt to find the result in-line, for level 1 hits
@@ -993,17 +1004,17 @@ HostDBContinuation::setbyEvent(int event, Event * e)
 {
   NOWARN_UNUSED(event);
   NOWARN_UNUSED(e);
-  HostDBInfo *r = probe(mutex, md5, name, namelen, ip, port, 0);
+  HostDBInfo *r = probe(mutex, md5, name, namelen, &ip, port, 0);
 
   if (r)
-    do_setby(r, &app, name, ip);
+    do_setby(r, &app, name, &ip);
   hostdb_cont_free(this);
   return EVENT_DONE;
 }
 
 
 static int
-remove_round_robin(HostDBInfo * r, char *hostname, unsigned int ip)
+remove_round_robin(HostDBInfo * r, char *hostname, sockaddr_storage const* ip)
 {
   if (r) {
     if (!r->round_robin)
@@ -1012,10 +1023,12 @@ remove_round_robin(HostDBInfo * r, char *hostname, unsigned int ip)
     if (!rr)
       return false;
     for (int i = 0; i < rr->good; i++) {
-      if (rr->info[i].ip() == ip) {
-        Debug("hostdb", "Deleting %u.%u.%u.%u from '%s' round robin DNS entry",
-              ((unsigned char *) &ip)[0], ((unsigned char *) &ip)[1],
-              ((unsigned char *) &ip)[2], ((unsigned char *) &ip)[3], hostname);
+      if (0 == ink_inet_cmp(rr->info[i].ip(), ip)) {
+        char ab[INET6_ADDRSTRLEN];
+        Debug("hostdb", "Deleting %s from '%s' round robin DNS entry",
+          ink_inet_ntop(ip, ab, sizeof ab),
+          hostname
+        );
         HostDBInfo tmp = rr->info[i];
         rr->info[i] = rr->info[rr->good - 1];
         rr->info[rr->good - 1] = tmp;
@@ -1029,11 +1042,13 @@ remove_round_robin(HostDBInfo * r, char *hostname, unsigned int ip)
             char *rr_ip_list = (char *) alloca(bufsize);
             char *p = rr_ip_list;
             for (int n = 0; n < rr->good; n++) {
-              unsigned int rr_ip = rr->info[n].ip();
-              unsigned char *pip = (unsigned char *) &rr_ip;
-              int nbytes = snprintf(p, bufsize, "%hhu.%hhu.%hhu.%hhu ", pip[0], pip[1], pip[2], pip[3]);
+              int nbytes;
+              // We'll convert the trailing nul to a space.
+              ink_inet_ntop(rr->info[n].ip(), p, bufsize);
+              nbytes = strlen(p) + 1;
               p += nbytes;
               bufsize -= nbytes;
+              p[-1] = ' '; // put the space.
             }
             Note("'%s' round robin DNS entry updated, entries=%d, IP list: %s", hostname, rr->good, rr_ip_list);
           }
@@ -1047,7 +1062,7 @@ remove_round_robin(HostDBInfo * r, char *hostname, unsigned int ip)
 
 
 Action *
-HostDBProcessor::failed_connect_on_ip_for_name(Continuation * cont, unsigned int ip, char *hostname, int len, int port)
+HostDBProcessor::failed_connect_on_ip_for_name(Continuation * cont, sockaddr_storage const* ip, char *hostname, int len, int port)
 {
   INK_MD5 md5;
   char *pServerLine = 0;
@@ -1110,8 +1125,8 @@ HostDBContinuation::removeEvent(int event, Event * e)
       if (cont)
         cont->handleEvent(EVENT_HOST_DB_IP_REMOVED, (void *) NULL);
     } else {
-      HostDBInfo *r = probe(mutex, md5, name, namelen, ip, port, m_pDS);
-      bool res = (remove_round_robin(r, name, ip) ? true : false);
+      HostDBInfo *r = probe(mutex, md5, name, namelen, &ip, port, m_pDS);
+      bool res = (remove_round_robin(r, name, &ip) ? true : false);
       if (cont)
         cont->handleEvent(EVENT_HOST_DB_IP_REMOVED, res ? (void *) &ip : (void *) NULL);
     }
@@ -1125,20 +1140,19 @@ HostDBContinuation::removeEvent(int event, Event * e)
 // calling continuation or to the calling cluster node.
 //
 HostDBInfo *
-HostDBContinuation::lookup_done(int aip, char *aname, bool around_robin, unsigned int ttl_seconds, SRVHosts * srv)
+HostDBContinuation::lookup_done(sockaddr_storage const* aip, char *aname, bool around_robin, unsigned int ttl_seconds, SRVHosts * srv)
 {
   HostDBInfo *i = NULL;
+  char ab[INET6_ADDRSTRLEN];
 
   ink_debug_assert(this_ethread() == hostDB.lock_for_bucket((int) (fold_md5(md5) % hostDB.buckets))->thread_holding);
-  if (!aip || !aname || !aname[0]) {
+  if (!aip || !ink_inet_is_valid(aip) || !aname || !aname[0]) {
     if (is_byname()) {
       Debug("hostdb", "lookup_done() failed for '%s'", name);
     } else if (is_srv()) {
       Debug("dns_srv", "SRV failed for '%s'", name);
     } else {
-      Debug("hostdb", "failed for %u.%u.%u.%u",
-            ((unsigned char *) &ip)[0], ((unsigned char *) &ip)[1],
-            ((unsigned char *) &ip)[2], ((unsigned char *) &ip)[3]);
+      Debug("hostdb", "failed for %s", ink_inet_ntop(&ip, ab, sizeof ab));
     }
     i = insert(hostdb_ip_fail_timeout_interval);        // currently ... 0
     i->round_robin = false;
@@ -1169,7 +1183,8 @@ HostDBContinuation::lookup_done(int aip, char *aname, bool around_robin, unsigne
       Debug("hostdb", "done %u.%u.%u.%u TTL %d",
             ((unsigned char *) &aip)[0], ((unsigned char *) &aip)[1],
             ((unsigned char *) &aip)[2], ((unsigned char *) &aip)[3], ttl_seconds);
-      i->ip() = aip;
+      ink_inet_copy(i->ip(), aip);
+//      i->ip() = aip;
       i->round_robin = around_robin;
       i->reverse_dns = false;
       if (name != aname) {
@@ -1177,8 +1192,8 @@ HostDBContinuation::lookup_done(int aip, char *aname, bool around_robin, unsigne
       }
       i->is_srv = false;
     } else if (is_srv()) {
-
-      i->ip() = aip;            /* this doesnt matter w. srv records -- setting to 1 so Md5 works */
+      ink_inet_copy(i->ip(), aip);
+//      i->ip() = aip;   /* this doesnt matter w. srv records -- setting to 1 so Md5 works */
 
       i->reverse_dns = false;
 
@@ -1313,7 +1328,7 @@ HostDBContinuation::dnsEvent(int event, HostEnt * e)
     ttl = failed ? 0 : e->ttl / 60;
     int ttl_seconds = failed ? 0 : e->ttl;      //ebalsa: moving to second accuracy
 
-    HostDBInfo *old_r = probe(mutex, md5, name, namelen, ip, port, m_pDS, true);
+    HostDBInfo *old_r = probe(mutex, md5, name, namelen, &ip, port, m_pDS, true);
     HostDBInfo old_info;
     if (old_r)
       old_info = *old_r;
@@ -1324,16 +1339,24 @@ HostDBContinuation::dnsEvent(int event, HostEnt * e)
       if (is_srv() && !failed) {
         n = e->srv_hosts.getCount();
       } else {
-        for (; nn < HOST_DB_MAX_ROUND_ROBIN_INFO && e->ent.h_addr_list[nn]; nn++)
-          if (*(unsigned int *) e->ent.h_addr_list[nn]) {
+        for (
+          ; nn < HOST_DB_MAX_ROUND_ROBIN_INFO && e->ent.h_addr_list[nn]
+          ; nn++
+        ) {
+
+          if (AF_INET6 == e->ent.h_addrtype
+            || (AF_INET == e->ent.h_addrtype
+              && 0 != *reinterpret_cast<in_addr_t*>(e->ent.h_addr_list[nn]))
+          ) {
             if (first < 0)
               first = nn;
             n++;
           } else
             Warning("0.0.0.0 removed from round-robin list for '%s'", name);
-        if (first < 0) {
-          failed = true;
-          rr = false;
+          if (first < 0) {
+            failed = true;
+            rr = false;
+          }
         }
       }
     } else {
@@ -1341,18 +1364,27 @@ HostDBContinuation::dnsEvent(int event, HostEnt * e)
     }
 
     HostDBInfo *r = NULL;
-    if (is_byname())
+    sockaddr_storage tip;
+    ink_inet_init(tip);
+    if (is_byname()) {
+      if (AF_INET6 == e->ent.h_addrtype) {
+        tip.ss_family = AF_INET6;
+        memcpy(&ink_inet_ip6_cast(tip), e->ent.h_addr_list[first], INK_IP6_SIZE);
+      } else {
+        ink_inet_ip4_set(tip, *reinterpret_cast<in_addr_t*>(e->ent.h_addr_list[first]));
+      }
       r =
-        lookup_done(failed ? 0 : *(unsigned int *) e->ent.h_addr_list[first], name, rr, ttl_seconds,
-                    failed ? 0 : &e->srv_hosts);
-    else if (is_srv())
-      r = lookup_done(1,        /* junk: FIXME: is the code in lookup_done() wrong to NEED this? */
+        lookup_done(failed ? 0 : &tip, name, rr, ttl_seconds,
+          failed ? 0 : &e->srv_hosts);
+    } else if (is_srv())
+      r = lookup_done(&tip,        /* junk: FIXME: is the code in lookup_done() wrong to NEED this? */
                       name,     /* hostname */
                       rr,       /* is round robin, doesnt matter for SRV since we recheck getCount() inside lookup_done() */
                       ttl_seconds,      /* ttl in seconds */
                       failed ? 0 : &e->srv_hosts);
     else
-      r = lookup_done(failed ? 0 : ip, failed ? name : e->ent.h_name, false, ttl_seconds, failed ? 0 : &e->srv_hosts);
+      r = lookup_done(failed ? 0 : &ip, failed ? name : e->ent.h_name, false, ttl_seconds, failed ? 0 : &e->srv_hosts);
+  
 
     if (rr) {
       int s = HostDBRoundRobin::size(n, is_srv());
@@ -1367,7 +1399,7 @@ HostDBContinuation::dnsEvent(int event, HostEnt * e)
 
               SRV *t = q->dequeue();
 
-              rr_data->info[i].ip() = 1;
+              ink_inet_init(*rr_data->info[i].ip());
               rr_data->info[i].round_robin = 0;
               rr_data->info[i].reverse_dns = 0;
 
@@ -1388,9 +1420,11 @@ HostDBContinuation::dnsEvent(int event, HostEnt * e)
             }
           }
         } else {
+          tip.ss_family = e->ent.h_addrtype;
           for (; ii < nn; ii++) {
-            if (*(unsigned int *) e->ent.h_addr_list[ii]) {
-              rr_data->info[i].ip() = *(unsigned int *) e->ent.h_addr_list[ii];
+            ink_inet_set(&tip, e->ent.h_addr_list[ii]);
+            if (ink_inet_is_ip6(tip) || 0 != ink_inet_ip4_addr_cast(&tip)) {
+              ink_inet_copy(rr_data->info[i].ip(), &tip);
               rr_data->info[i].full = 1;
               rr_data->info[i].round_robin = 0;
               rr_data->info[i].reverse_dns = 0;
@@ -1458,7 +1492,7 @@ HostDBContinuation::dnsEvent(int event, HostEnt * e)
 struct HostDB_get_message
 {
   INK_MD5 md5;
-  unsigned int ip;
+  sockaddr_storage ip;
   int port;
   Continuation *cont;
   int namelen;
@@ -1477,7 +1511,7 @@ HostDBContinuation::make_get_message(char *buf, int size)
   HostDB_get_message *msg = (HostDB_get_message *) buf;
   msg->md5 = md5;
   msg->port = htonl(port);
-  msg->ip = htonl(ip);
+  ink_inet_copy(msg->ip, ip);
   msg->cont = this;
 
   // name
@@ -1547,7 +1581,7 @@ struct HostDB_put_message
 {
   INK_MD5
     md5;
-  unsigned int
+  sockaddr_storage
     ip;
   unsigned int
     ttl;
@@ -1586,7 +1620,7 @@ HostDBContinuation::make_put_message(HostDBInfo * r, Continuation * c, char *buf
   msg->md5 = md5;
   msg->cont = c;
   if (r) {
-    msg->ip = htonl(r->ip());
+    ink_inet_copy(&msg->ip, r->ip());
     msg->application1 = r->app.allotment.application1;
     msg->application2 = r->app.allotment.application2;
     msg->missing = false;
@@ -1648,7 +1682,7 @@ HostDBContinuation::probeEvent(int event, Event * e)
     return EVENT_DONE;
   }
 
-  if (!hostdb_enable || (!*name && !ip)) {
+  if (!hostdb_enable || (!*name && ink_inet_is_ip(ip))) {
     if (action.continuation)
       action.continuation->handleEvent(EVENT_HOST_DB_LOOKUP, NULL);
 #ifdef NON_MODULAR
@@ -1663,7 +1697,7 @@ HostDBContinuation::probeEvent(int event, Event * e)
 
     // Do the probe
     //
-    HostDBInfo *r = probe(mutex, md5, name, namelen, ip, port, m_pDS);
+    HostDBInfo *r = probe(mutex, md5, name, namelen, &ip, port, m_pDS);
 
     if (r)
       HOSTDB_INCREMENT_DYN_STAT(hostdb_total_hits_stat);
@@ -1745,11 +1779,12 @@ HostDBContinuation::do_dns()
   ink_assert(!action.cancelled);
   if (is_byname()) {
     Debug("hostdb", "DNS %s", name);
-    unsigned int tip = ink_inet_addr(name);
+    sockaddr_storage tip;
+//    unsigned int tip = ink_inet_addr(name);
     // check 127.0.0.1 format
-    if ((int) tip != -1) {
+    if (0 == ink_inet_pton(name, &tip)) {
       if (action.continuation) {
-        HostDBInfo *r = lookup_done(tip, name, false, HOST_DB_MAX_TTL, NULL);
+        HostDBInfo *r = lookup_done(&tip, name, false, HOST_DB_MAX_TTL, NULL);
         reply_to_cont(action.continuation, r);
       }
       hostdb_cont_free(this);
@@ -1774,10 +1809,9 @@ HostDBContinuation::do_dns()
       Debug("dns_srv", "SRV lookup of %s", name);
       pending_action = dnsProcessor.getSRVbyname(this, name, dnsH, dns_lookup_timeout);
     } else {
-      Debug("hostdb", "DNS IP %u.%u.%u.%u",
-            ((unsigned char *) &ip)[0], ((unsigned char *) &ip)[1],
-            ((unsigned char *) &ip)[2], ((unsigned char *) &ip)[3]);
-      pending_action = dnsProcessor.gethostbyaddr(this, ip, dns_lookup_timeout);
+      char ab[INET6_ADDRSTRLEN];
+      Debug("hostdb", "DNS IP %s", ink_inet_ntop(&ip, ab, sizeof ab));
+      pending_action = dnsProcessor.gethostbyaddr(this, &ip, dns_lookup_timeout);
     }
   } else {
     SET_HANDLER((HostDBContHandler) & HostDBContinuation::dnsPendingEvent);
@@ -1818,7 +1852,7 @@ HostDBContinuation::clusterResponseEvent(int event, Event * e)
     action = 0;
     // just a remote fill
     ink_assert(!missing);
-    lookup_done(ip, name, false, ttl, NULL);
+    lookup_done(&ip, name, false, ttl, NULL);
   }
   hostdb_cont_free(this);
   return EVENT_DONE;
@@ -1850,7 +1884,7 @@ HostDBContinuation::clusterEvent(int event, Event * e)
     }
     if (e) {
       HostDBContinuation *c = (HostDBContinuation *) e;
-      HostDBInfo *r = lookup_done(c->ip, c->name, false, c->ttl, NULL);
+      HostDBInfo *r = lookup_done(&c->ip, c->name, false, c->ttl, NULL);
       r->app.allotment.application1 = c->app.allotment.application1;
       r->app.allotment.application2 = c->app.allotment.application2;
 
@@ -1939,7 +1973,7 @@ get_hostinfo_ClusterFunction(ClusterMachine * from, void *data, int len)
      ----------------------------------------- */
 
 
-  c->init(msg->name, msg->namelen, ntohl(msg->ip), ntohl(msg->port), msg->md5, NULL, pDS);
+  c->init(msg->name, msg->namelen, &msg->ip, ntohl(msg->port), msg->md5, NULL, pDS);
   TEST(printf("get_hostinfo_ClusterFunction %s %d\n", msg->name, msg->ip));
   c->mutex = hostDB.lock_for_bucket(fold_md5(msg->md5) % hostDB.buckets);
   c->action.mutex = c->mutex;
@@ -1955,7 +1989,7 @@ put_hostinfo_ClusterFunction(ClusterMachine * from, void *data, int len)
   HostDBContinuation *c = hostDBContAllocator.alloc();
 
   SET_CONTINUATION_HANDLER(c, (HostDBContHandler) & HostDBContinuation::clusterResponseEvent);
-  c->init(msg->name, msg->namelen, ntohl(msg->ip), ntohl(msg->port), msg->md5, NULL);
+  c->init(msg->name, msg->namelen, &msg->ip, ntohl(msg->port), msg->md5, NULL);
   TEST(printf("put_hostinfo_ClusterFunction %s %d\n", msg->name, msg->ip));
   c->mutex = hostDB.lock_for_bucket(fold_md5(msg->md5) % hostDB.buckets);
   c->from_cont = msg->cont;     // cannot use action if cont freed due to timeout
@@ -2083,7 +2117,7 @@ typedef int (ShowHostDB::*ShowHostDBEventHandler) (int event, Event * data);
 struct ShowHostDB: public ShowCont
 {
   char *name;
-  unsigned int ip;
+  sockaddr_storage ip;
   bool force;
 
   int showMain(int event, Event * e)
@@ -2112,13 +2146,14 @@ struct ShowHostDB: public ShowCont
     if (name)
       hostDBProcessor.getbyname_re(this, name, 0, force ? HostDBProcessor::HOSTDB_FORCE_DNS_ALWAYS : 0);
     else
-      hostDBProcessor.getbyaddr_re(this, ip);
+      hostDBProcessor.getbyaddr_re(this, &ip);
     return EVENT_CONT;
   }
 
 
   int showOne(HostDBInfo * r, bool rr, int event, Event * e)
   {
+    char ab[INET6_ADDRSTRLEN];
     CHECK_SHOW(show("<table border=1>\n"));
     CHECK_SHOW(show("<tr><td>%s</td><td>%s%s</td></tr>\n",
                     "Type", r->round_robin ? "Round-Robin" : "", r->reverse_dns ? "Reverse DNS" : "DNS"));
@@ -2132,7 +2167,7 @@ struct ShowHostDB: public ShowCont
     if (r->reverse_dns) {
       CHECK_SHOW(show("<tr><td>%s</td><td>%s</td></tr>\n", "Hostname", r->hostname()? r->hostname() : "<none>"));
     } else {
-      CHECK_SHOW(show("<tr><td>%s</td><td>%u.%u.%u.%u</td></tr>\n", "IP", PRINT_IP(r->ip())));
+      CHECK_SHOW(show("<tr><td>%s</td><td>%s</td></tr>\n", "IP", ink_inet_ntop(r->ip(), ab, sizeof ab)));
     }
     CHECK_SHOW(show("</table>\n"));
     return EVENT_CONT;
@@ -2142,6 +2177,7 @@ struct ShowHostDB: public ShowCont
   int showLookupDone(int event, Event * e)
   {
     HostDBInfo *r = (HostDBInfo *) e;
+    char ab[INET6_ADDRSTRLEN];
 
     CHECK_SHOW(begin("HostDB Lookup"));
     if (name) {
@@ -2166,7 +2202,7 @@ struct ShowHostDB: public ShowCont
       }
     } else {
       if (name) {
-        CHECK_SHOW(show("<H2>%u.%u.%u.%u Not Found</H2>\n", PRINT_IP(ip)));
+        CHECK_SHOW(show("<H2>%s Not Found</H2>\n", ink_inet_ntop(&ip, ab, sizeof ab)));
       } else {
         CHECK_SHOW(show("<H2>%s Not Found</H2>\n", name));
       }
@@ -2176,7 +2212,8 @@ struct ShowHostDB: public ShowCont
 
 
 ShowHostDB(Continuation * c, HTTPHdr * h):
-  ShowCont(c, h), name(0), ip(0), force(0) {
+  ShowCont(c, h), name(0), force(0) {
+  ink_inet_init(ip);
     SET_HANDLER(&ShowHostDB::showMain);
   }
 };
@@ -2200,8 +2237,10 @@ register_ShowHostDB(Continuation * c, HTTPHdr * h)
     char *gn = NULL;
     if (s->sarg)
       gn = (char *)memchr(s->sarg, '=', strlen(s->sarg));
-    if (gn)
-      s->ip = ink_inet_addr(gn + 1);
+    if (gn) {
+      ink_inet_pton(gn, &s->ip);
+//      s->ip = ink_inet_addr(gn + 1);
+    }
     SET_CONTINUATION_HANDLER(s, &ShowHostDB::showLookup);
   } else if (STR_LEN_EQ_PREFIX(path, path_len, "name")) {
     s->force = !ptr_len_ncasecmp(path + 5, path_len - 5, "force", 5);
@@ -2242,6 +2281,8 @@ struct HostDBTestReverse: public Continuation
           printf("HostDBTestReverse: reversed %s\n", i->hostname());
         outstanding--;
     }
+
+    sockaddr_storage ip;
     while (outstanding < HOSTDB_TEST_MAX_OUTSTANDING && total < HOSTDB_TEST_LENGTH)
     {
       long l = 0;
@@ -2250,12 +2291,12 @@ struct HostDBTestReverse: public Continuation
 #else
       l = lrand48();
 #endif
-      unsigned int ip = (unsigned int) l;
+      ink_inet_ip4_set(ip, l);
       outstanding++;
       total++;
       if (!(outstanding % 1000))
         printf("HostDBTestReverse: %d\n", total);
-      hostDBProcessor.getbyaddr_re(this, ip);
+      hostDBProcessor.getbyaddr_re(this, &ip);
     }
     if (!outstanding) {
       printf("HostDBTestReverse: done\n");

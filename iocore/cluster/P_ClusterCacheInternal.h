@@ -113,7 +113,8 @@ struct CacheContinuation:public Continuation
   uint16_t cfl_flags;             // Request flags; see CFL_XXX defines
   CacheFragType frag_type;
   int nbytes;
-  unsigned int target_ip;
+//  unsigned int target_ip;
+  sockaddr_storage target_ip;
   int request_opcode;
   bool local_lookup_only;
   bool no_reply_message;
@@ -285,7 +286,7 @@ CacheContinuation():
     cfl_flags(0),
     frag_type(CACHE_FRAG_TYPE_NONE),
     nbytes(0),
-    target_ip(0),
+//    target_ip(0),
     request_opcode(0),
     local_lookup_only(0),
     no_reply_message(0),
@@ -310,6 +311,7 @@ CacheContinuation():
     ic_request(),
     ic_response(), ic_params(0), ic_old_info(), ic_new_info(), ic_hostname_len(0), cache_op_ClusterFunction(0) {
     token.clear();
+    ink_inet_init(target_ip);
     SET_HANDLER((CacheContHandler) & CacheContinuation::remoteOpEvent);
   }
 

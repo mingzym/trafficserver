@@ -28,21 +28,22 @@
 static Machine *machine = NULL;
 
 // Moved from HttpTransactHeaders.cc, we should probably move this somewhere ...
-#define H(_x) (((_x)>9)?((_x)-10+'A'):((_x)+'0'))
-int
-nstrhex(char *d, unsigned int i)
-{
-  unsigned char *p = (unsigned char *) &i;
-  d[0] = H(p[0] >> 4);
-  d[1] = H(p[0] & 0xF);
-  d[2] = H(p[1] >> 4);
-  d[3] = H(p[1] & 0xF);
-  d[4] = H(p[2] >> 4);
-  d[5] = H(p[2] & 0xF);
-  d[6] = H(p[3] >> 4);
-  d[7] = H(p[3] & 0xF);
-  return 8;
+namespace {
+inline char H(int x) {
+  x &= 0xF;
+  return x>9 ? x - 10 + 'A': x + '0';
 }
+
+int
+nstrhex(char *d, void const* src, size_t src_len) {
+  char const* s = static_cast<char const*>(src);
+  for ( char const* limit = s + src_len ; s < limit ; ++s ) {
+    *d++ = H(*s >> 4);
+    *d++ = H(*s);
+  }
+  return src_len * 2;
+}
+} // anon namespace
 
 
 // Machine class. TODO: This has to deal with IPv6!
@@ -56,53 +57,65 @@ this_machine()
 }
 
 void
-create_this_machine(char *hostname, unsigned int ip)
+create_this_machine(char *hostname, sockaddr_storage const* ip)
 {
   machine = NEW(new Machine(hostname, ip));
 }
 
-Machine::Machine(char *ahostname, unsigned int aip)
-  : hostname(ahostname), ip(aip)
+Machine::Machine(char *ahostname, sockaddr_storage const* aip)
+  : hostname(ahostname)
 {
-  if (!aip) {
+  if (!aip || !ink_inet_is_ip(aip)) {
+    addrinfo* ai_info = 0;
+    addrinfo  ai_hints;
     char localhost[1024];
 
     if (!ahostname) {
-      ink_release_assert(!gethostname(localhost, 1023));
+      ink_release_assert(!gethostname(localhost, sizeof(localhost)-1));
       ahostname = localhost;
     }
     hostname = xstrdup(ahostname);
 
-    ink_gethostbyname_r_data data;
-    struct hostent *r = ink_gethostbyname_r(ahostname, &data);
+    ink_inet_init(ip);
 
-    if (!r) {
-      Warning("unable to DNS %s: %d", ahostname, data.herrno);
-      ip = 0;
+    memset(&ai_hints, 0, sizeof(ai_hints));
+    ai_hints.ai_flags = AI_ADDRCONFIG;
+    int z = getaddrinfo(ahostname, 0, &ai_hints, &ai_info);
+
+    if (0 != z) {
+      Warning("unable to DNS %s: %d [%s]", ahostname, z, gai_strerror(z));
     } else {
-      ip = (unsigned int) -1;   // 0xFFFFFFFF
-      for (int i = 0; r->h_addr_list[i]; i++) {
-        if (ip > *(unsigned int *) r->h_addr_list[i])
-          ip = *(unsigned int *) r->h_addr_list[i];
+      addrinfo* x = 0; // best candidate (smallest value) so far.
+      for ( addrinfo* i = ai_info ; i ; i = i->ai_next ) {
+        if (AF_INET == i->ai_family || AF_INET6 == i->ai_family) {
+          if (0 == x) x = i;
+          else if (1 == ink_inet_cmp(
+              ink_inet_ss_cast(x->ai_addr),
+              ink_inet_ss_cast(i->ai_addr)
+            ))
+            x = i;
+        }
       }
-      if (ip == (unsigned int) -1)
-        ip = 0;
+      if (x) ink_inet_copy(&ip, ink_inet_ss_cast(x->ai_addr));
+      else Warning("unable to find IP address for %s", ahostname);
+      freeaddrinfo(ai_info);
     }
     //ip = htonl(ip); for the alpha! TODO
   } else {
-    ip = aip;
+    char buff[1024];
+    ink_inet_copy(&ip, aip);
+//    ip = aip;
 
-    ink_gethostbyaddr_r_data data;
-    struct hostent *r = ink_gethostbyaddr_r((char *) &ip, sizeof(int), AF_INET, &data);
+    int z = getnameinfo(ink_inet_sa_cast(&ip), sizeof ip, buff, sizeof buff, 0, 0, NI_NAMEREQD);
 
-    if (r == NULL) {
-      unsigned char x[4];
-
-      memset(x, 0, sizeof(x));
-      *(uint32_t *) & x = (uint32_t) ip;
-      Debug("machine_debug", "unable to reverse DNS %hhu.%hhu.%hhu.%hhu: %d", x[0], x[1], x[2], x[3], data.herrno);
-    } else
-      hostname = xstrdup(r->h_name);
+    if (0 != z) {
+      Debug("machine_debug", "unable to reverse DNS %s: %d",
+        ink_inet_ntop(&ip, buff, sizeof buff),
+        z
+      );
+    } else {
+      hostname = xstrdup(buff);
+    }
   }
 
   if (hostname)
@@ -110,19 +123,15 @@ Machine::Machine(char *ahostname, unsigned int aip)
   else
     hostname_len = 0;
 
-  unsigned char x[4];
-
-  memset(x, 0, sizeof(x));
-  *(uint32_t *) & x = (uint32_t) ip;
-  const size_t ip_string_size = sizeof(char) * 16;
-  ip_string = (char *) xmalloc(ip_string_size);
-  snprintf(ip_string, ip_string_size, "%hhu.%hhu.%hhu.%hhu", x[0], x[1], x[2], x[3]);
+  ip_string = static_cast<char *>(xmalloc(INET6_ADDRSTRLEN));
+  ink_inet_ntop(&ip, ip_string, INET6_ADDRSTRLEN);
   ip_string_len = strlen(ip_string);
 
-  ip_hex_string = (char*)xmalloc(9);
-  memset(ip_hex_string, 0, 9);
-  nstrhex(ip_hex_string, ip);
-  ip_hex_string_len = strlen(ip_hex_string);
+  ip_hex_string = static_cast<char*>(xmalloc(INK_IP6_SIZE * 2 + 1));
+  if (ink_inet_is_ip6(ip))
+    ip_hex_string_len = nstrhex(ip_hex_string, &ink_inet_ip6_cast(&ip)->sin6_addr, INK_IP6_SIZE);
+  else
+    ip_hex_string_len = nstrhex(ip_hex_string, &ink_inet_ip4_addr_cast(&ip), sizeof(in_addr_t));
 }
 
 Machine::~Machine()

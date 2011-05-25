@@ -56,9 +56,14 @@ static TSClusterRPCFunction RPC_Functions[API_END_CLUSTER_FUNCTION];
 
 #define INDEX_TO_CLUSTER_STATUS_HANDLE(i) ((TSClusterStatusHandle_t)((i)))
 #define CLUSTER_STATUS_HANDLE_TO_INDEX(h) ((int) ((h)))
-#define NODE_HANDLE_TO_IP(h) (*((struct in_addr *) &((h))))
+//#define NODE_HANDLE_TO_IP(h) (*((struct in_addr *) &((h))))
 #define RPC_FUNCTION_KEY_TO_CLUSTER_NUMBER(k) ((int)((k)))
-#define IP_TO_NODE_HANDLE(ip) ((TSNodeHandle_t)((ip)))
+//#define IP_TO_NODE_HANDLE(ip) ((TSNodeHandle_t)((ip)))
+
+inline TSNodeHandle_t HandleFrom(ClusterMachine* m) {
+  return m->id;
+}
+
 #define SIZEOF_RPC_MSG_LESS_DATA (sizeof(TSClusterRPCMsg_t) - \
 	 (sizeof(TSClusterRPCMsg_t) - sizeof(TSClusterRPCHandle_t)))
 
@@ -164,11 +169,12 @@ MachineStatusSM::MachineStatusSMEvent(Event * e, void *d)
             for (mi = 0; mi < cc->n_machines; ++mi) {
               if (0 != ink_inet_cmp(&cc->machines[mi]->ip, my_ipaddr)) {
                 char buff[INET6_ADDRSTRLEN];
-                nh = IP_TO_NODE_HANDLE(cc->machines[mi]->ip);
+                nh = HandleFrom(cc->machines[mi]);
                 status_callouts[n].func(&nh, NODE_ONLINE);
 
                 Debug("cluster_api",
-                      "initial callout: n %d ([%s], %d)", n,
+                  "initial callout: n %d:#%d ([%s], %d)",
+                  n, cc->machines[mi]->id,
                   ink_inet_ntop(&cc->machines[mi]->ip, buff, sizeof buff),
                   NODE_ONLINE
                 );
@@ -357,16 +363,19 @@ TSDeleteClusterStatusFunction(TSClusterStatusHandle_t * h)
 }
 
 int
-TSNodeHandleToIPAddr(TSNodeHandle_t * h, struct in_addr *in)
+TSNodeHandleToIPAddr(TSNodeHandle_t * h, sockaddr_storage *in)
 {
-  *in = NODE_HANDLE_TO_IP(*h);
-  return 0;
+  int zret = TS_ERROR;
+  ClusterConfiguration * cc = this_cluster()->current_configuration();
+  ClusterMachine* m = cc->findById(static_cast<uint32_t>(*h));
+  if (m && ink_inet_copy(in, &m->ip)) zret = TS_SUCCESS;
+  return zret;
 }
 
 void
 TSGetMyNodeHandle(TSNodeHandle_t * h)
 {
-  *h = IP_TO_NODE_HANDLE((this_cluster_machine())->ip);
+  *h = HandleFrom(this_cluster_machine());
 }
 
 /*
@@ -417,9 +426,9 @@ directed_machine_online(int Ipaddr, TSClusterStatusHandle_t * h)
  *  Called directly by the Cluster upon detection of node online.
  */
 void
-machine_online_APIcallout(int Ipaddr)
+machine_online_APIcallout(uint32_t id)
 {
-  MachineStatusSM *msm = NEW(new MachineStatusSM(IP_TO_NODE_HANDLE(Ipaddr), NODE_ONLINE));
+  MachineStatusSM *msm = NEW(new MachineStatusSM(id, NODE_ONLINE));
 
   ink_atomiclist_push(&status_callout_atomic_q, (void *) msm);
 }
@@ -428,9 +437,9 @@ machine_online_APIcallout(int Ipaddr)
  *  Called directly by the Cluster upon detection of node offline.
  */
 void
-machine_offline_APIcallout(int Ipaddr)
+machine_offline_APIcallout(uint32_t id)
 {
-  MachineStatusSM *msm = NEW(new MachineStatusSM(IP_TO_NODE_HANDLE(Ipaddr), NODE_OFFLINE));
+  MachineStatusSM *msm = NEW(new MachineStatusSM(id, NODE_OFFLINE));
 
   ink_atomiclist_push(&status_callout_atomic_q, (void *) msm);
 }
@@ -505,7 +514,7 @@ default_api_ClusterFunction(ClusterMachine * m, void *data, int len)
 
   if (cluster_function < API_END_CLUSTER_FUNCTION && RPC_Functions[cluster_function]) {
     int msg_data_len = len - SIZEOF_RPC_MSG_LESS_DATA;
-    TSNodeHandle_t nh = IP_TO_NODE_HANDLE(m->ip);
+    TSNodeHandle_t nh = HandleFrom(m);
     (*RPC_Functions[cluster_function]) (&nh, msg, msg_data_len);
   } else {
     clusterProcessor.free_remote_data((char *) data, len);
@@ -562,25 +571,25 @@ TSAllocClusterRPCMsg(TSClusterRPCHandle_t * h, int data_size)
 int
 TSSendClusterRPC(TSNodeHandle_t * nh, TSClusterRPCMsg_t * msg)
 {
-  struct in_addr ipaddr = NODE_HANDLE_TO_IP(*nh);
   RPCHandle_t *rpch = (RPCHandle_t *) & msg->m_handle;
 
   OutgoingControl *c = *((OutgoingControl **)
                          ((char *) msg - sizeof(OutgoingControl *)));
   ClusterConfiguration * cc = this_cluster()->current_configuration();
   ClusterMachine *m;
+  char ab[INET6_ADDRSTRLEN];
 
   ink_release_assert(rpch->u.internal.magic == RPC_HANDLE_MAGIC);
 
-  if ((m = cc->find(ipaddr.s_addr))) {
+  if (0 != (m = cc->findById(*nh))) {
     int len = c->len - sizeof(OutgoingControl *);
     ink_release_assert((size_t) len >= sizeof(TSClusterRPCMsg_t));
 
     clusterProcessor.invoke_remote(m, rpch->u.internal.cluster_function,
                                    msg, len, (CLUSTER_OPT_STEAL | CLUSTER_OPT_DATA_IS_OCONTROL));
-    Debug("cluster_api", "TSSendClusterRPC: msg 0x%x dlen %d [%u.%u.%u.%u] sent", msg, len, DOT_SEPARATED(ipaddr.s_addr));
+    Debug("cluster_api", "TSSendClusterRPC: msg 0x%x dlen %d [%s] sent", msg, len, ink_inet_ntop(&m->ip, ab, sizeof ab));
   } else {
-    Debug("cluster_api", "TSSendClusterRPC: msg 0x%x to [%u.%u.%u.%u] dropped", msg, DOT_SEPARATED(ipaddr.s_addr));
+    Debug("cluster_api", "TSSendClusterRPC: msg 0x%x to [#%d] dropped", msg, *nh);
     c->freeall();
   }
 

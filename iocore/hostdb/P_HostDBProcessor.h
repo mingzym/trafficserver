@@ -31,8 +31,32 @@
 #include "I_HostDBProcessor.h"
 
 
-#define HOSTDB_CLIENT_IP_HASH(_client_ip,_ip) (((_client_ip >> 16)^_client_ip^_ip^(_ip>>16))&0xFFFF)
+//#define HOSTDB_CLIENT_IP_HASH(_client_ip,_ip) (((_client_ip >> 16)^_client_ip^_ip^(_ip>>16))&0xFFFF)
 
+inline unsigned int HOSTDB_CLIENT_IP_HASH(
+  sockaddr_storage const* lhs,
+  sockaddr_storage const* rhs
+) {
+  unsigned int zret = static_cast<unsigned int>(-1);
+  if (ink_inet_are_compatible(lhs,rhs)) {
+    in_addr_t ip1;
+    in_addr_t ip2;
+    if (ink_inet_is_ip4(lhs)) {
+      ip1 = ink_inet_ip4_addr_cast(lhs);
+      ip2 = ink_inet_ip4_addr_cast(rhs);
+      zret = (ip1 >> 16) ^ ip1 ^ ip2 ^ (ip2 >> 16);
+    } else if (ink_inet_is_ip6(lhs)) {
+      in6_addr const& a1 = ink_inet_ip6_cast(lhs)->sin6_addr;
+      in6_addr const& a2 = ink_inet_ip6_cast(rhs)->sin6_addr;
+      for ( int i = 0 ; i < 4 ; ++i ) {
+        ip1 = a1.__in6_u.__u6_addr32[i];
+        ip2 = a2.__in6_u.__u6_addr32[i];
+        zret ^= (ip1 >> 16) ^ ip1 ^ ip2 ^ (ip2 >> 16);
+      }
+    }
+  }
+  return zret & 0xFFFF;
+}
 //
 // Constants
 //
@@ -148,7 +172,7 @@ struct HostDBCache: public MultiCache<HostDBInfo>
 };
 
 inline HostDBInfo *
-HostDBRoundRobin::find_ip(unsigned int ip)
+HostDBRoundRobin::find_ip(sockaddr_storage const* ip)
 {
   bool bad = (n <= 0 || n > HOST_DB_MAX_ROUND_ROBIN_INFO || good <= 0 || good > HOST_DB_MAX_ROUND_ROBIN_INFO);
   if (bad) {
@@ -157,7 +181,7 @@ HostDBRoundRobin::find_ip(unsigned int ip)
   }
 
   for (int i = 0; i < good; i++) {
-    if (ip == info[i].ip()) {
+    if (0 == ink_inet_cmp(ip, info[i].ip())) {
       return &info[i];
     }
   }
@@ -166,7 +190,7 @@ HostDBRoundRobin::find_ip(unsigned int ip)
 }
 
 inline HostDBInfo *
-HostDBRoundRobin::select_best(unsigned int client_ip, HostDBInfo * r)
+HostDBRoundRobin::select_best(sockaddr_storage const* client_ip, HostDBInfo * r)
 {
   (void) r;
   bool bad = (n <= 0 || n > HOST_DB_MAX_ROUND_ROBIN_INFO || good <= 0 || good > HOST_DB_MAX_ROUND_ROBIN_INFO);
@@ -178,11 +202,9 @@ HostDBRoundRobin::select_best(unsigned int client_ip, HostDBInfo * r)
   if (HostDBProcessor::hostdb_strict_round_robin) {
     best = current++ % good;
   } else {
-    unsigned int ip = info[0].ip();
-    unsigned int best_hash = HOSTDB_CLIENT_IP_HASH(client_ip, ip);
+    unsigned int best_hash = HOSTDB_CLIENT_IP_HASH(client_ip, info[0].ip());
     for (int i = 1; i < good; i++) {
-      ip = info[i].ip();
-      unsigned int h = HOSTDB_CLIENT_IP_HASH(client_ip, ip);
+      unsigned int h = HOSTDB_CLIENT_IP_HASH(client_ip, info[i].ip());
       if (best_hash < h) {
         best = i;
         best_hash = h;
@@ -193,7 +215,7 @@ HostDBRoundRobin::select_best(unsigned int client_ip, HostDBInfo * r)
 }
 
 inline HostDBInfo *
-HostDBRoundRobin::select_best_http(unsigned int client_ip, time_t now, int32_t fail_window)
+HostDBRoundRobin::select_best_http(sockaddr_storage const* client_ip, time_t now, int32_t fail_window)
 {
   bool bad = (n <= 0 || n > HOST_DB_MAX_ROUND_ROBIN_INFO || good <= 0 || good > HOST_DB_MAX_ROUND_ROBIN_INFO);
   if (bad) {
@@ -209,16 +231,14 @@ HostDBRoundRobin::select_best_http(unsigned int client_ip, time_t now, int32_t f
   } else {
     unsigned int best_hash_any = 0;
     unsigned int best_hash_up = 0;
-    unsigned int ip;
-    for (int i = 0; i < good; i++) {
-      ip = info[i].ip();
-      unsigned int h = HOSTDB_CLIENT_IP_HASH(client_ip, ip);
+    for (int i = 0; i < good; ++i) {
+      unsigned int h = HOSTDB_CLIENT_IP_HASH(client_ip, info[i].ip());
       if (best_hash_any <= h) {
         best_any = i;
         best_hash_any = h;
       }
       if (info[i].app.http_data.last_failure == 0 ||
-          (unsigned int) (now - fail_window) > info[i].app.http_data.last_failure) {
+        static_cast<unsigned int>(now - fail_window) > info[i].app.http_data.last_failure) {
         // Entry is marked up
         if (best_hash_up <= h) {
           best_up = i;
@@ -271,7 +291,7 @@ struct HostDBContinuation: public Continuation
 {
 
   Action action;
-  unsigned int ip;
+  sockaddr_storage ip;
   unsigned int ttl;
   int port;
   bool is_srv_lookup;
@@ -311,7 +331,7 @@ struct HostDBContinuation: public Continuation
   {
     return ((*name && is_srv_lookup) ? true : false);
   }
-  HostDBInfo *lookup_done(int aip, char *aname, bool round_robin, unsigned int attl, SRVHosts * s = NULL);
+  HostDBInfo *lookup_done(sockaddr_storage const* aip, char *aname, bool round_robin, unsigned int attl, SRVHosts * s = NULL);
   bool do_get_response(Event * e);
   void do_put_response(ClusterMachine * m, HostDBInfo * r, Continuation * cont);
   int failed_cluster_request(Event * e);
@@ -323,16 +343,17 @@ struct HostDBContinuation: public Continuation
 
   HostDBInfo *insert(unsigned int attl);
 
-  void init(char *hostname, int len, int aip, int port, INK_MD5 & amd5,
+  void init(char *hostname, int len, sockaddr_storage const* aip, int port, INK_MD5 & amd5,
             Continuation * cont, void *pDS = 0, bool is_srv = false, int timeout = 0);
   int make_get_message(char *buf, int len);
   int make_put_message(HostDBInfo * r, Continuation * c, char *buf, int len);
 
 HostDBContinuation():
-  Continuation(NULL), ip(0), ttl(0), port(0),
+  Continuation(NULL), ttl(0), port(0),
     is_srv_lookup(false), dns_lookup_timeout(0),
     timeout(0), from(0),
     from_cont(0), probe_depth(0), namelen(0), missing(false), force_dns(false), round_robin(false) {
+    ink_inet_init(ip);
     memset(name, 0, MAXDNAME);
     md5.b[0] = 0;
     md5.b[1] = 0;
@@ -382,7 +403,7 @@ master_hash(INK_MD5 & md5)
 inline bool
 is_dotted_form_hostname(char *c)
 {
-  return -1 != (int) ink_inet_addr(c);
+  return 0 == ink_inet_pton(c, 0);
 }
 
 inline Queue<HostDBContinuation> &

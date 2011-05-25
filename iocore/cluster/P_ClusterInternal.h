@@ -517,7 +517,7 @@ extern void do_machine_config_change(void *, const char *);
 #ifdef NON_MODULAR
 // Cluster API support functions
 extern void clusterAPI_init();
-extern void machine_online_APIcallout(int);
-extern void machine_offline_APIcallout(int);
+extern void machine_online_APIcallout(uint32_t);
+extern void machine_offline_APIcallout(uint32_t);
 #endif
 #endif /* _ClusterInternal_h */

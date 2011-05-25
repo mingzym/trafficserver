@@ -33,6 +33,7 @@ extern char cache_system_config_directory[PATH_NAME_MAX + 1];
 
 MachineList *machines_config = NULL;
 MachineList *cluster_config = NULL;
+uint32_t ClusterMachine::NextId = 0;
 
 ProxyMutex *the_cluster_config_mutex;
 
@@ -68,7 +69,8 @@ ClusterMachine::ClusterMachine(char *ahostname,
   sockaddr_storage const* aip
 ):
 dead(false),
-hostname(ahostname),
+hostname(ahostname)
+id(++NextId),
 //ip(aip),
 //cluster_port(aport),
 msg_proto_major(0),
@@ -78,11 +80,10 @@ clusterHandler(0)
   EThread *thread = this_ethread();
   ProxyMutex *mutex = thread->mutex;
 
-  ink_inet_copy(&ip, aip);
 #ifndef INK_NO_CLUSTER
   CLUSTER_INCREMENT_DYN_STAT(CLUSTER_MACHINES_ALLOCATED_STAT);
 #endif
-  if (!ink_inet_is_ip(aip)) {
+  if (!aip || !ink_inet_is_ip(aip)) {
     char localhost[1024];
     if (!ahostname) {
       ink_release_assert(!gethostname(localhost, 1023));
@@ -108,27 +109,41 @@ clusterHandler(0)
 //      ip = inet_addr(clusterIP);
       ink_inet_pton(&ip, clusterIP);
     } else {
-      ink_gethostbyname_r_data data;
-      struct hostent *r = ink_gethostbyname_r(ahostname, &data);
-      if (!r) {
-        Warning("unable to DNS %s: %d", ahostname, data.herrno);
-        ink_inet_invalidate(ip);
-      } else {
-        // lowest IP address
-        uint32_t xip = (unsigned int) -1; // 0xFFFFFFFF
-        for (int i = 0; r->h_addr_list[i]; i++)
-          if (xip > *(unsigned int *) r->h_addr_list[i])
-            xip = *(unsigned int *) r->h_addr_list[i];
-        if (xip == (unsigned int) -1)
-          ink_inet_invalidate(ip);
-        else
-          ink_inet_ip4_set(ip, xip);
+      addrinfo* ai_info = 0;
+      addrinfo  ai_hints;
+      char ai_buff[1024];
+      char localhost[1024];
+
+      if (!ahostname) {
+        ink_release_assert(!gethostname(localhost, sizeof(localhost)-1));
+        ahostname = localhost;
       }
-      //ip = htonl(ip); for the alpha!
+      hostname = xstrdup(ahostname);
+
+      ink_inet_init(ip);
+
+      memset(ai_hints, 0, sizeof(ai_hints));
+      ai_hints.ai_flags = AI_ADDRCONFIG;
+      int z = getaddrinfo(ahostname, 0, &ai_hints, &ai_info);
+
+      if (0 != z) {
+        Warning("unable to DNS %s: %d [%s]", ahostname, z, gai_strerror(z));
+      } else {
+        addrinfo* x = 0; // best candidate (smallest value) so far.
+        for ( addrinfo* i = ai_info ; i ; i = i->ai_next ) {
+          if (AF_INET == i->ai_family || AF_INET6 == i->ai_family) {
+            if (0 == x) x = i;
+            else if (1 == ink_inet_cmp(x->ai_addr, i->ai_addr))
+              x = i;
+          }
+        }
+        if (x) ink_inet_copy(&ip, x->ai_addr);
+        else Warning("unable to find IP address for %s", ahostname);
+        freeaddrinfo(ai_info);
+      }
     }
 #endif // LOCAL_CLUSTER_TEST_MODE
   } else {
-    addrinfo* ai = 0;
     char buff[1024];
     ink_inet_copy(ip, aip);
 //    ip = aip;

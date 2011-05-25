@@ -147,7 +147,7 @@ ClusterAccept::ClusterAcceptMachine(NetVConnection * NetVC)
   Debug(CL_NOTE, "Accepting machine %s", ink_inet_ntop(remote_ip, buff, sizeof buff));
   ClusterHandler *ch = NEW(new ClusterHandler);
   ch->machine = NEW(new ClusterMachine(NULL, remote_ip));
-  ch->ip = ch->;
+  ink_inet_copy(&ch->ip, remote_ip);
   ch->net_vc = NetVC;
   eventProcessor.schedule_imm(ch, ET_CLUSTER);
   return 1;
@@ -160,14 +160,14 @@ make_cluster_connections(MachineList * l, MachineList * old)
   //
   // Connect to all new machines.
   //
-  uint32_t ip = this_cluster_machine()->ip;
+  sockaddr_storage const* ip = &this_cluster_machine()->ip;
 
   if (l) {
     for (int i = 0; i < l->n; i++)
 #ifdef LOCAL_CLUSTER_TEST_MODE
       if (ip < l->machine[i].ip || (ip == l->machine[i].ip && (cluster_port < l->machine[i].port)))
 #else
-      if (ip < l->machine[i].ip)
+      if (-1 == ink_inet_cmp(ip, &l->machine[i].ip))
 #endif
         clusterProcessor.connect(l->machine[i].ip, l->machine[i].port);
   }

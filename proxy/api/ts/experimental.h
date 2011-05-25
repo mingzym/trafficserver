@@ -403,7 +403,7 @@ extern "C"
    *	Return != 0 Failure						    *
    * contact: OXY, DY
    ****************************************************************************/
-  tsapi int TSNodeHandleToIPAddr(TSNodeHandle_t *h, struct in_addr *in);
+  tsapi int TSNodeHandleToIPAddr(TSNodeHandle_t *h, sockaddr_storage *in);
 
   /****************************************************************************
    *  Get the TSNodeHandle_t for the local node.	    	    	    *

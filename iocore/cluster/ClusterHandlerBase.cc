@@ -763,7 +763,7 @@ ClusterHandler::machine_down()
   Note("machine down %u.%u.%u.%u", DOT_SEPARATED(ip));
 #endif
 #ifdef NON_MODULAR
-  machine_offline_APIcallout(ip);
+  machine_offline_APIcallout(machine->id);
 #endif
   snprintf(textbuf, sizeof(textbuf), "%hhu.%hhu.%hhu.%hhu:%d", DOT_SEPARATED(ip), port);
   REC_SignalManager(REC_SIGNAL_MACHINE_DOWN, textbuf);
@@ -1062,7 +1062,7 @@ ClusterHandler::startClusterEvent(int event, Event * e)
         machine->msg_proto_major = proto_major;
         machine->msg_proto_minor = proto_minor;
 #ifdef NON_MODULAR
-        machine_online_APIcallout(ip);
+        machine_online_APIcallout(machine->id);
 #endif
         // Signal the manager
         snprintf(textbuf, sizeof(textbuf), "%hhu.%hhu.%hhu.%hhu:%d", DOT_SEPARATED(ip), port);

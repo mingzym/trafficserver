@@ -120,9 +120,8 @@ struct HostDBRoundRobin;
 struct HostDBInfo
 {
   // Public Interface
-  unsigned int &ip()
-  {
-    return data.ip;
+  sockaddr_storage* ip() {
+    return &data.ip;
   }
 
   char *hostname();
@@ -223,7 +222,7 @@ struct HostDBInfo
   */
   void set_from(HostDBInfo & info)
   {
-    ip() = info.ip();
+    ink_inet_copy(ip(), info.ip());
     ip_timestamp = info.ip_timestamp;
     ip_timeout_interval = info.ip_timeout_interval;
     round_robin = info.round_robin;
@@ -238,7 +237,7 @@ struct HostDBInfo
   //
   union
   {
-    unsigned int ip;
+    sockaddr_storage ip;
     int hostname_offset;
     // int srv_host_offset;
     uint64_t dummy_pad;
@@ -268,12 +267,12 @@ struct HostDBInfo
   uint64_t md5_high;
 
   bool failed() {
-    return !ip();
+    return ink_inet_is_valid(ip());
   }
 
   void set_failed()
   {
-    ip() = 0;
+    ink_inet_invalidate(ip());
   }
 
   void set_deleted()
@@ -314,7 +313,7 @@ struct HostDBInfo
 
   void reset()
   {
-    ip() = 0;
+    ink_inet_invalidate(ip());
     app.allotment.application1 = 0;
     app.allotment.application2 = 0;
     backed = 0;
@@ -344,7 +343,7 @@ HostDBInfo():
     app.allotment.application1 = 0;
     app.allotment.application2 = 0;
 #endif
-    ip() = 0;
+    ink_inet_init(*ip());
 
     return;
   }
@@ -382,10 +381,10 @@ struct HostDBRoundRobin
     }
   }
 
-  HostDBInfo *find_ip(unsigned int ip);
-  HostDBInfo *select_best(unsigned int client_ip, HostDBInfo * r = NULL);
+  HostDBInfo *find_ip(sockaddr_storage const* ip);
+  HostDBInfo *select_best(sockaddr_storage const* client_ip, HostDBInfo * r = NULL);
 
-  HostDBInfo *select_best_http(unsigned int client_ip, time_t now, int32_t fail_window);
+  HostDBInfo *select_best_http(sockaddr_storage const* client_ip, time_t now, int32_t fail_window);
 
   HostDBInfo *increment_round_robin()
   {
@@ -448,7 +447,7 @@ struct HostDBProcessor: public Processor
 
 
   /** Lookup Hostinfo by addr */
-  Action *getbyaddr_re(Continuation * cont, unsigned int aip)
+  Action *getbyaddr_re(Continuation * cont, sockaddr_storage const* aip)
   {
     return getby(cont, NULL, 0, 0, aip, false);
   }
@@ -462,7 +461,7 @@ struct HostDBProcessor: public Processor
 
   */
   Action *failed_connect_on_ip_for_name(Continuation * cont,
-                                        unsigned int aip, char *hostname, int len = 0, int port = 0);
+                                        sockaddr_storage const* aip, char *hostname, int len = 0, int port = 0);
 
   /** Set the application information (fire-and-forget). */
   void setbyname_appinfo(char *hostname, int len, int port, HostDBApplicationInfo * app)
@@ -470,7 +469,7 @@ struct HostDBProcessor: public Processor
     setby(hostname, len, port, 0, app);
   }
 
-  void setbyaddr_appinfo(unsigned int ip, HostDBApplicationInfo * app)
+  void setbyaddr_appinfo(sockaddr_storage const* ip, HostDBApplicationInfo * app)
   {
     setby(0, 0, 0, ip, app);
   }
@@ -487,8 +486,8 @@ struct HostDBProcessor: public Processor
   // Private
   HostDBCache *cache();
   Action *getby(Continuation * cont, char *hostname, int len, int port,
-                unsigned int ip, bool aforce_dns, int timeout = 0);
-  void setby(char *hostname, int len, int port, unsigned int aip, HostDBApplicationInfo * app);
+                sockaddr_storage const* ip, bool aforce_dns, int timeout = 0);
+  void setby(char *hostname, int len, int port, sockaddr_storage const* aip, HostDBApplicationInfo * app);
 
 };
 

@@ -23,6 +23,7 @@
 
 #include "libts.h"
 
+# if 0
 #if defined(darwin)
 extern "C"
 {
@@ -162,9 +163,10 @@ ink_inet_addr(const char *s)
   }
   return htonl((uint32_t) - 1);
 }
+# endif
 
 const char *ink_inet_ntop(
-  const sockaddr_storage *addr,
+  sockaddr_storage const* addr,
   char *dst, size_t size
 ) {
   void const* ptr = NULL;
@@ -208,9 +210,22 @@ int ink_inet_pton(char const* text, sockaddr_storage* ss) {
   hints.ai_family = PF_UNSPEC;
   hints.ai_flags = AI_NUMERICHOST|AI_PASSIVE;
   if (0 == (zret = getaddrinfo(text, 0, &hints, &ai))) {
-    if (ink_inet_copy(*ss, *ink_inet_ss_cast(ai->ai_addr)))
+    if (ss) {
+      if (ink_inet_copy(ss, ink_inet_ss_cast(ai->ai_addr)))
+        zret = 0;
+    } else if (ink_inet_is_ip(ss)) {
       zret = 0;
+    }
     freeaddrinfo(ai);
   }
   return zret;
+}
+
+uint32_t ink_inet_hash(sockaddr_storage const* ip) {
+  uint32_t zret = 0;
+  uint32_t a4;
+  switch (ip->ss_family) {
+  case AF_INET:
+    a4 = ink_inet_ip4_cast(ip)->sin_addr.s_addr;
+    zret =  (((_client_ip >> 16)^_client_ip^_ip^(_ip>>16))&0xFFFF)
 }
