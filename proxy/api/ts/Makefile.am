@@ -26,3 +26,12 @@ include_HEADERS = \
 noinst_HEADERS = \
   InkAPIHughes.h \
   InkAPIPrivateIOCore.h
+
+install-data-local:
+	if [ `id -un` != "root" ]; then \
+                $(INSTALL) -d $(DESTDIR)$(includedir); \
+                chmod 0755 $(DESTDIR)$(includedir); \
+        else \
+                $(INSTALL) -o $(pkgsysuser) -g $(pkgsysgroup) -d $(DESTDIR)$(includedir); \
+                chmod 0755 $(DESTDIR)$(includedir); \
+        fi

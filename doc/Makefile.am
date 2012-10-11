@@ -83,6 +83,15 @@ EXTRA_DIST = \
   Doxyfile.in \
   $(dist_trafficshell_DATA)
 
+install-data-local:
+	if [ `id -un` != "root" ]; then \
+                $(INSTALL) -d $(DESTDIR)$(trafficshelldir); \
+                chmod 0755 $(DESTDIR)$(trafficshelldir); \
+        else \
+                $(INSTALL) -o $(pkgsysuser) -g $(pkgsysgroup) -d $(DESTDIR)$(trafficshelldir); \
+                chmod 0755 $(DESTDIR)$(trafficshelldir); \
+        fi
+
 clean-local:
 	-rm -rf html warn.log
 

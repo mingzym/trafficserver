@@ -294,6 +294,9 @@ install-data-local:
 				$(DESTDIR)$(pkgruntimedir) $(DESTDIR)$(pkgsysconfdir) \
 				$(DESTDIR)$(pkgsysconfdir)/internal $(DESTDIR)$(pkgdatadir) $(DESTDIR)$(pkgcachedir); \
 	fi
+	-chmod 0755 $(DESTDIR)$(pkglocalstatedir) $(DESTDIR)$(pkglogdir) \
+		$(DESTDIR)$(pkgruntimedir) $(DESTDIR)$(pkgsysconfdir) \
+		$(DESTDIR)$(pkgsysconfdir)/internal $(DESTDIR)$(pkgdatadir) $(DESTDIR)$(pkgcachedir);
 
 install-data-hook:
 	if [ `id -un` == "root" ]; then \
@@ -305,7 +308,9 @@ install-exec-local:
 	if [ `id -un` != "root" ]; then \
 		$(INSTALL) -d $(DESTDIR)$(pkglibexecdir); \
 	else \
-		$(INSTALL) -d -o $(pkgsysuser) -g $(pkgsysgroup) $(DESTDIR)$(pkglibexecdir); fi
+		$(INSTALL) -d -o $(pkgsysuser) -g $(pkgsysgroup) $(DESTDIR)$(pkglibexecdir); \
+	fi
+	-chmod 0755 $(DESTDIR)$(pkglibexecdir);
 
 install-exec-hook:
 	if [ `id -un` == "root" ]; then \
