@@ -1,0 +1,548 @@
+<?xml version="1.0" encoding="UTF-8"?> 
+ <!-- policy_config.xml, conversion filter version 1.19 --> 
+ <Policy> 
+  
+ <Configuration> 
+ <Global> 
+    <!-- Use filter.config logic rules for lookups --> 
+    <Config name="converted-filter-config" value="1"/> 
+ </Global> 
+  
+ <!-- 
+   * ========================================================================== 
+   * LDAP authentication service: 
+   * ========================================================================== 
+  --> 
+ <Auth-Service-LDAP>
+  <Config name="enabled" value="0"/> 
+   <!-- threads defaults to number of processors --> 
+   <Config name="number-of-threads" value="0" /> 
+ </Auth-Service-LDAP> 
+ <Auzn-Service-LDAP/>
+
+<Auth-Handle-LDAP name="ldap-def">
+  <Config name="enabled" value="0"/>
+  <Config name="purge-cache-on-auth-failure" value="0"/>
+  <Config name="ttl" value="3000"/>
+  <Config name="base-dn" value="NULL"/>
+  <Config name="server-name" value="NULL"/>
+  <Config name="server-port" value="389"/>
+  <Config name="uid-filter" value="uid"/>
+</Auth-Handle-LDAP>
+
+<!-- derived from line 139 -->
+<Auth-Handle-LDAP name="ldap-139">
+   <Config name="base-dn" value="o=Chalie's Bar"/>
+   <Config name="server-name" value="ldap.inktomi.com"/>
+   <Config name="uid-filter" value="uid"/>
+   <Config name="enabled" value="1"/>
+</Auth-Handle-LDAP>
+
+<!-- derived from line 140 -->
+<Auth-Handle-LDAP name="ldap-140">
+   <Config name="base-dn" value="o"/>
+   <Config name="server-name" value="l:133"/>
+   <Config name="uid-filter" value="uid"/>
+   <Config name="enabled" value="1"/>
+</Auth-Handle-LDAP>
+
+<!-- derived from line 141 -->
+<Auth-Handle-LDAP name="ldap-141">
+   <Config name="base-dn" value="o"/>
+   <Config name="server-name" value="l:133"/>
+   <Config name="secondary-server" value="t:444"/>
+   <Config name="uid-filter" value="uid"/>
+   <Config name="enabled" value="1"/>
+</Auth-Handle-LDAP>
+
+<!-- derived from line 145 -->
+<Auth-Handle-LDAP name="ldap-145">
+   <Config name="attribute-name" value="a_name"/>
+   <Config name="base-dn" value="o"/>
+   <Config name="server-name" value="l:133"/>
+   <Config name="uid-filter" value="uid"/>
+   <Config name="use-attributes" value="1"/>
+   <Config name="enabled" value="1"/>
+</Auth-Handle-LDAP>
+
+<!-- derived from line 146 -->
+<Auth-Handle-LDAP name="ldap-146">
+   <Config name="attribute-name" value="a_name"/>
+   <Config name="attribute-value" value="z"/>
+   <Config name="base-dn" value="o"/>
+   <Config name="server-name" value="l:133"/>
+   <Config name="uid-filter" value="uid"/>
+   <Config name="use-attributes" value="1"/>
+   <Config name="enabled" value="1"/>
+</Auth-Handle-LDAP>
+
+<!-- derived from line 148 -->
+<Auth-Handle-LDAP name="ldap-148">
+   <Config name="base-dn" value="o"/>
+   <Config name="server-name" value="l"/>
+   <Config name="uid-filter" value="uid"/>
+   <Config name="enabled" value="1"/>
+</Auth-Handle-LDAP>
+
+<!-- derived from line 149 -->
+<Auth-Handle-LDAP name="ldap-149">
+   <Config name="base-dn" value="o=p d=c d=z"/>
+   <Config name="server-name" value="l"/>
+   <Config name="uid-filter" value="uid"/>
+   <Config name="enabled" value="1"/>
+</Auth-Handle-LDAP>
+
+<!-- derived from line 152 -->
+<Auth-Handle-LDAP name="ldap-152">
+   <Config name="attribute-value" value="z"/>
+   <Config name="base-dn" value="o"/>
+   <Config name="server-name" value="l"/>
+   <Config name="uid-filter" value="uid"/>
+   <Config name="enabled" value="1"/>
+</Auth-Handle-LDAP>
+
+<!-- derived from line 174 -->
+<Auth-Handle-LDAP name="ldap-174">
+   <Config name="attribute-name" value="foo"/>
+   <Config name="attribute-value" value="bar"/>
+   <Config name="bind-dn" value="administrator"/>
+   <Config name="bind-pwd-file" value="config/internal/pwd_1020385052.enc"/>
+   <Config name="base-dn" value="cn=users,dc=tsdev,dc=inktomi,dc=com"/>
+   <Config name="server-name" value="ntlm.inktomi.com"/>
+   <Config name="uid-filter" value="sAMAccountName"/>
+   <Config name="use-attributes" value="1"/>
+   <Config name="enabled" value="1"/>
+</Auth-Handle-LDAP>
+
+<!-- derived from line 177 -->
+<Auzn-Handle-LDAP name="ldap-177">
+   <Config name="attribute-name" value="sex"/>
+   <Config name="attribute-value" value="male"/>
+   <Config name="bind-dn" value="administrator"/>
+   <Config name="bind-pwd-file" value="config/internal/pwd_1020385052.enc"/>
+   <Config name="base-dn" value="cn=users,dc=tsdev,dc=inktomi,dc=com"/>
+   <Config name="server-name" value="ntlm.inktomi.com"/>
+   <Config name="uid-filter" value="sAMAccountName"/>
+   <Config name="use-attributes" value="1"/>
+   <Config name="enabled" value="1"/>
+</Auzn-Handle-LDAP>
+
+ 
+ <!-- 
+   * ========================================================================== 
+   * The NTLM serivce definition: 
+   * 
+   * NTLM is a Windows(r) challenge/response authentication protocol.   
+   * This service provides native NTLM protocol support to clients able to  
+   * understand this protocol: currently IE and WMT clients.  Other clients 
+   * can use basic authenticate via this service. 
+   * 
+   * NTLM may be considered a pure authentication protocol in that it 
+   * does not return any other information to the proxy about the client other  
+   * than whether or not the client successfully identified itself to the 
+   * backing NT domain server (or PDC).  Since NTLM is typically backed by 
+   * an ActiveDirectory user database, more specific user authorizations may 
+   * be invoked by re-accessing the user information in the authorization step. 
+   * This is how the "NTLM group authorization" is handled in the TE proxy. 
+   * The first step, defined here, is used to authenticate the user.  The second 
+   * step:  verifying additional data in the ActiveDictory is handled via 
+   * the ActiveDirectory [LDAP] authorization function. 
+   * 
+   * NT Service definition variables: 
+   * 
+   * enabled         - 0 to disable service  1 to enable service 
+   * dc-list         - list of domain controllers, comma separated.  In a  
+   *                   windows network this should be the PDC and backup DC. 
+   * dc-load-balance - if set to '1' the client is hashed to one of the DCs  
+   * nt-domain       - windows NT Domain that this configuration is servicing. 
+   * dc-max-connections - maximum number of TCP connections to the domain  
+   *                   controller; this should be no higher than '2' for  
+   *                   most windows-based servers. 
+   * nt-host         - hostname that the proxy should use to identify itself 
+   *                   to the dc. 
+   * (undocumented:) 
+   * dc-max-conn-time  - maximum time (secs) of tcp connection to dc. 
+   * queue-len         - max number of outstanding requests over a tcp connect 
+   *                     to the dc. 
+   * req-timeout       - timeout for a request to be serviced by dc. 
+   * dc-retry-time     - length of time before retrying a request to dc. 
+   * dc-fail-threshold - number of failures before marking dc down. 
+   * fail-open         - behavior with which to treat failed dcs. 
+   * ========================================================================== 
+ --> 
+ <Auth-Service-NTLM /> 
+ <Auth-Handle-NTLM name="ntlm-def">
+  <Config name="enabled" value="0"/>
+  <Config name="cache-ttl-value" value="3600"/>
+  <Config name="dc-fail-open" value="0"/>
+  <Config name="dc-list" value="NULL"/>
+  <Config name="dc-load-balance" value="0"/>
+  <Config name="dc-max-connections" value="3"/>
+  <Config name="dc-retry-time" value="300"/>
+  <Config name="fail-threshold" value="5"/>
+  <Config name="nt-domain" value="NULL"/>
+  <Config name="nt-host" value="PROXY"/>
+  <Config name="queue-len" value="10"/>
+  <Config name="req-timeout" value="15"/>
+</Auth-Handle-NTLM>
+
+ 
+ <!-- 
+   * ========================================================================== 
+   * RADIUS authentication service: 
+   * ========================================================================== 
+  --> 
+ <Auth-Service-RADIUS>
+  <Config name="enabled" value="0"/>
+</Auth-Service-RADIUS>
+
+<Auth-Handle-RADIUS name="radius-def">
+  <Config name="max-retries" value="10"/>
+  <Config name="min-timeout" value="10"/>
+  <Config name="ttl" value="60"/>
+  <Config name="primary-server-auth-port" value="1812"/>
+  <Config name="primary-server-name" value="NULL"/>
+  <Config name="primary-server-shared-key" value="NULL"/>
+  <Config name="secondary-server-auth-port" value="1812"/>
+  <Config name="secondary-server-name" value="NULL"/>
+  <Config name="secondary-server-shared-key" value="NULL"/>
+</Auth-Handle-RADIUS>
+ 
+  
+ <!--  
+   * ========================================================================== 
+   * The static service providers handle common authorization functions. 
+   * 
+   * Authorization differs from authentication in that it is not necessarily 
+   * user-name based and it provides more detailed instruction to the protocol  
+   * [http, mixt, etc] about what actions are available.   
+   * 
+   * In the simplest (common in the old filter.config system) a user is  
+   * authenticated.  If successful the user is considered positively authorized 
+   * and if the user could not be identified the authoriztion is then negative. 
+   * The ACC authorization mechanisms allow these function to be split up.   
+   * 
+   * Static authorization services: 
+   *  
+   *  'allow-cfg' this service indicates that authorization passed, and it  
+   *              typically used in the default ACL scope to determine  
+   *              default authorization behavior:  i.e., when no other ACL  
+   *              rule matches. 
+   *              
+   *  'deny-cfg'  this service indicates that authorization failed, and it  
+   *              typically used in the default ACL scope to determine default  
+   *              authorization behavior:  i.e., when no other ACL rule matches. 
+   * ========================================================================== 
+  --> 
+ <Auzn-Service-STATIC /> 
+ <Auzn-Handle-STATIC name="allow-cfg" provider="allow" /> 
+ <Auzn-Handle-STATIC name="deny-cfg" provider="deny" /> 
+  
+ </Configuration> 
+  
+ <!-- Matching criteria and rule-sets are defined below. --> 
+ <!-- Key identifiers are of the form: 'ft-' <filter.config line number> --> 
+ <Acl> 
+ 
+<Key keyId="ft-103">
+    <Critiera type="dest_port" method="exact" value="25"/>
+</Key>
+
+<Key keyId="ft-104">
+    <Critiera type="dest_domain" method="domain" value="yoga.com"/>
+</Key>
+
+<Key keyId="ft-105">
+    <Critiera type="dest_ip" method="range" value="0.0.0.0-255.255.255.255"/>
+</Key>
+
+<Key keyId="ft-106">
+    <Critiera type="dest_ip" method="range" value="255.0.0.0-399.255.255.255"/>
+</Key>
+
+<Key keyId="ft-107">
+    <Critiera type="dest_ip" method="exact" value="0.0.0.0"/>
+</Key>
+
+<Key keyId="ft-108">
+    <Critiera type="dest_ip" method="mask" value="209.131.0.0/16"/>
+</Key>
+
+<Key keyId="ft-109">
+    <Critiera type="host" method="host" value="www.chump"/>
+</Key>
+
+<Key keyId="ft-119">
+</Key>
+
+<Key keyId="ft-120">
+    <Critiera type="prefix" method="prefix" value="www"/>
+</Key>
+
+<Key keyId="ft-121">
+    <Critiera type="suffix" method="suffix" value=".exe"/>
+</Key>
+
+<Key keyId="ft-122">
+    <Critiera type="key" method="exact" name="http_method" value="PUT"/>
+</Key>
+
+<Key keyId="ft-123">
+    <Critiera type="time" method="exact" value="14:00"/>
+</Key>
+
+<Key keyId="ft-124">
+    <Critiera type="time" method="range" value="14:00-15:00"/>
+</Key>
+
+<Key keyId="ft-125">
+    <Critiera type="source_ip" method="exact" value="1.2.3.4"/>
+</Key>
+
+<Key keyId="ft-126">
+    <Critiera type="source_ip" method="range" value="1.2.3.4-5.6.7.8"/>
+</Key>
+
+<Key keyId="ft-127">
+    <Critiera type="source_ip" method="mask" value="1.2.3.4/5"/>
+</Key>
+
+<Key keyId="ft-128">
+    <Critiera type="key" method="exact" name="tag" value="Guitar Center"/>
+</Key>
+
+<Key keyId="ft-138">
+</Key>
+
+<Key keyId="ft-139">
+</Key>
+
+<Key keyId="ft-140">
+</Key>
+
+<Key keyId="ft-141">
+</Key>
+
+<Key keyId="ft-142">
+</Key>
+
+<Key keyId="ft-143">
+</Key>
+
+<Key keyId="ft-144">
+</Key>
+
+<Key keyId="ft-145">
+</Key>
+
+<Key keyId="ft-146">
+</Key>
+
+<Key keyId="ft-147">
+</Key>
+
+<Key keyId="ft-148">
+</Key>
+
+<Key keyId="ft-149">
+</Key>
+
+<Key keyId="ft-152">
+</Key>
+
+<Key keyId="ft-156">
+</Key>
+
+<Key keyId="ft-157">
+</Key>
+
+<Key keyId="ft-158">
+</Key>
+
+<Key keyId="ft-159">
+    <Critiera type="key" method="exact" name="tag" value="wmt"/>
+</Key>
+
+<Key keyId="ft-167">
+    <Critiera type="url" method="regex" value=".*"/>
+</Key>
+
+<Key keyId="ft-168">
+</Key>
+
+<Key keyId="ft-171">
+    <Critiera type="dest_domain" method="domain" value="www.some.com"/>
+    <Critiera type="key" method="exact" name="http_method" value="put"/>
+    <Critiera type="dest_port" method="exact" value="80"/>
+</Key>
+
+<Key keyId="ft-174">
+    <Critiera type="dest_domain" method="domain" value="pubah.com"/>
+</Key>
+
+<Key keyId="ft-177">
+    <Critiera type="dest_domain" method="domain" value="chutz.com"/>
+</Key>
+ 
+ <!-- 
+   * ========================================================================== 
+   * Default ACL definitions 
+   * ========================================================================== 
+  --> 
+ <RuleSet scope="TE"> 
+ 
+<!-- 103: dest_domain=.	        port=25		action=deny -->
+<Rule keyId="ft-103" authorizor="deny-cfg"/>
+
+<!-- 104: dest_domain=yoga.com	action=deny -->
+<Rule keyId="ft-104" authorizor="deny-cfg"/>
+
+<!-- 105: dest_ip=0.0.0.0-255.255.255.255 action=allow -->
+<Rule keyId="ft-105" authorizor="allow-cfg"/>
+
+<!-- 106: dest_ip=255.0.0.0-399.255.255.255 action=allow -->
+<Rule keyId="ft-106" authorizor="allow-cfg"/>
+
+<!-- 107: dest_ip=0.0.0.0        action=allow -->
+<Rule keyId="ft-107" authorizor="allow-cfg"/>
+
+<!-- 108: dest_ip=209.131.0.0/16 action=allow -->
+<Rule keyId="ft-108" authorizor="allow-cfg"/>
+
+<!-- 109: dest_host=www.chump    action=deny -->
+<Rule keyId="ft-109" authorizor="deny-cfg"/>
+
+<!-- 118: dest_domain=. port=25 action=allow -->
+<Rule keyId="ft-103" authorizor="allow-cfg"/>
+
+<!-- 119: dest_domain=. sheme=http action=allow -->
+<Rule keyId="ft-119" authorizor="allow-cfg"/>
+
+<!-- 120: dest_domain=. prefix=www action=deny -->
+<Rule keyId="ft-120" authorizor="deny-cfg"/>
+
+<!-- 121: dest_domain=. suffix=.exe action=deny -->
+<Rule keyId="ft-121" authorizor="deny-cfg"/>
+
+<!-- 122: dest_domain=. method=PUT action=deny -->
+<Rule keyId="ft-122" authorizor="deny-cfg"/>
+
+<!-- 123: dest_domain=. time="14:00" action=deny -->
+<Rule keyId="ft-123" authorizor="deny-cfg"/>
+
+<!-- 124: dest_domain=. time="14:00-15:00" action=deny -->
+<Rule keyId="ft-124" authorizor="deny-cfg"/>
+
+<!-- 125: dest_domain=. src_ip="1.2.3.4" action=deny -->
+<Rule keyId="ft-125" authorizor="deny-cfg"/>
+
+<!-- 126: dest_domain=. src_ip="1.2.3.4-5.6.7.8" action=deny -->
+<Rule keyId="ft-126" authorizor="deny-cfg"/>
+
+<!-- 127: dest_domain=. src_ip="1.2.3.4/5" action=deny -->
+<Rule keyId="ft-127" authorizor="deny-cfg"/>
+
+<!-- 128: dest_domain=. tag="Guitar Center" action=deny -->
+<Rule keyId="ft-128" authorizor="deny-cfg"/>
+
+<!-- 138: dest_domain=. action="ldap" -->
+<Rule keyId="ft-138" authenticator="ldap-def"/>
+
+<!-- 139: dest_domain=. action="ldap" server="ldap.inktomi.com" dn="o=Chalie's Bar" -->
+<Rule keyId="ft-139" authenticator="ldap-139"/>
+
+<!-- 140: dest_domain=. action="ldap" server="l:133" dn="o" -->
+<Rule keyId="ft-140" authenticator="ldap-140"/>
+
+<!-- 141: dest_domain=. action="ldap" server="l:133,t:444,z:555" dn="o" -->
+<Rule keyId="ft-141" authenticator="ldap-141"/>
+
+<!-- 142: dest_domain=. action="ldap" server="l:133" dn="o" realm="Realm 2" -->
+<Rule keyId="ft-142" authenticator="ldap-140">
+   <RuleData name="realm" value="Realm 2"/>
+</Rule>
+
+<!-- 143: dest_domain=. action="ldap" server="l:133" dn="o" realm="Realm 3" -->
+<Rule keyId="ft-143" authenticator="ldap-140">
+   <RuleData name="realm" value="Realm 3"/>
+</Rule>
+
+<!-- 144: dest_domain=. action="ldap" server="ldap.inktomi.com" dn="o=Chalie's Bar" -->
+<Rule keyId="ft-144" authenticator="ldap-139"/>
+
+<!-- 145: dest_domain=. action="ldap" server="l:133" dn="o" attr="a_name" -->
+<Rule keyId="ft-145" authenticator="ldap-145"/>
+
+<!-- 146: dest_domain=. action="ldap" server="l:133" dn="o" attr="a_name" attr_val="z" -->
+<Rule keyId="ft-146" authenticator="ldap-146"/>
+
+<!-- 147: dest_domain=. action="ldap" realm="BasicAuthRealm" -->
+<Rule keyId="ft-147" authenticator="ldap-def">
+   <RuleData name="realm" value="BasicAuthRealm"/>
+</Rule>
+
+<!-- 148: dest_domain=. action="ldap" server="l" dn="o" uid_filter="uid" -->
+<Rule keyId="ft-148" authenticator="ldap-148"/>
+
+<!-- 149: dest_domain=. action="ldap" server="l" dn="o=p d=c d=z" uid_filter="uid" -->
+<Rule keyId="ft-149" authenticator="ldap-149"/>
+
+<!-- 152: dest_domain=. action="ldap" server="l" dn="o" attr_val="z" -->
+<Rule keyId="ft-152" authenticator="ldap-152"/>
+
+<!-- 156: dest_domain=. action="ntlm" -->
+<Rule keyId="ft-156" authenticator="ntlm-def"/>
+
+<!-- 157: dest_domain=. action="ntlm" redirect_url="http://www.foobar.com" -->
+<Rule keyId="ft-157" authenticator="ntlm-def">
+   <RuleData name="redirect-url" value="http://www.foobar.com"/>
+</Rule>
+
+<!-- 158: dest_domain=. action="ntlm" realm="BasicAuthRealm" -->
+<Rule keyId="ft-158" authenticator="ntlm-def">
+   <RuleData name="realm" value="BasicAuthRealm"/>
+</Rule>
+
+<!-- 159: dest_domain=. action="ntlm" realm="BasicAuthRealm" tag=wmt -->
+<Rule keyId="ft-159" authenticator="ntlm-def">
+   <RuleData name="realm" value="BasicAuthRealm"/>
+</Rule>
+
+<!-- 160: dest_domain=. action="ntlm" realm="BasicAuthRealm" tag=wmt push=true -->
+<Rule keyId="ft-159" authenticator="ntlm-def">
+   <RuleData name="realm" value="BasicAuthRealm"/>
+</Rule>
+
+<!-- 167: url_regex=.* pushed=true action=ntlm -->
+<Rule keyId="ft-167" authenticator="ntlm-def">
+   <RuleData name="pushed" value="true"/>
+</Rule>
+
+<!-- 168: dest_domain=. pushed=true -->
+<Rule keyId="ft-168" authorizor="allow-cfg">
+   <RuleData name="pushed" value="true"/>
+</Rule>
+
+<!-- 171: dest_domain=www.some.com port=80 method=put action=deny -->
+<Rule keyId="ft-171" authorizor="deny-cfg"/>
+
+<!-- 174: dest_domain=pubah.com action=ldap server=ntlm.inktomi.com dn="cn=users,dc=tsdev,dc=inktomi,dc=com" attr="foo" attr_val="bar" realm=brilee uid_filter=sAMAccountName bind_dn=administrator bind_pwd_file=config/internal/pwd_1020385052.enc -->
+<Rule keyId="ft-174" authenticator="ldap-174">
+   <RuleData name="realm" value="brilee"/>
+</Rule>
+
+<!-- 177: dest_domain=chutz.com action=ntlm server=ntlm.inktomi.com dn="cn=users,dc=tsdev,dc=inktomi,dc=com" attr="sex" attr_val="male" realm=brilee uid_filter=sAMAccountName bind_dn=administrator bind_pwd_file=config/internal/pwd_1020385052.enc -->
+<Rule keyId="ft-177" authenticator="ntlm-def" authorizor="ldap-177">
+   <RuleData name="realm" value="brilee"/>
+</Rule>
+
+<!-- DefaultRule authorizor="deny-cfg" / -->
+<DefaultRule authorizor="allow-cfg"/>
+
+</RuleSet>
+
+ 
+ <!-- not yet supported: TE:nntp and TE:ftp --> 
+ </Acl> 
+ </Policy> 
+ 

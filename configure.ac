@@ -1666,6 +1666,7 @@ AC_CONFIG_FILES([example/thread-pool/Makefile])
 # example app w/ standalone iocore
 AC_CONFIG_FILES([example/app-template/Makefile example/app-template/records.config])
 
+AC_CONFIG_FILES([test/Makefile])
 # -----------------------------------------------------------------------------
 # 7. autoheader TEMPLATES
 

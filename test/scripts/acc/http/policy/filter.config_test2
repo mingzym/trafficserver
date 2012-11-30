@@ -1,0 +1,177 @@
+##
+# THIS IS USED FOR TESTING THE FILTER.CONFIG TO POLICY.XML 
+# CONFIGURATION TOOL
+##
+#
+# filter.config
+#
+# The purpose of this file is to specify which http and ftp
+#  objects can be obtained through Traffic Server and which
+#  headers should be forwarded for http requests
+#
+# Each line consists of a set of tag value pairs.  The pairs
+#   are in the format  <tag>=<value>
+# 
+# Each line must include exactly one primary specifier
+#
+#   Primary destination specifiers are
+#     dest_domain=
+#     dest_host=
+#     dest_ip=
+#     url_regex=
+#
+#
+# Lines may include any number of the secondary specifiers but
+#    secondary specifiers may not be duplicated on the same line
+#
+#   Secondary specifiers are
+#     port=
+#     scheme=
+#     prefix=
+#     suffix=
+#     method=
+#     time=
+#     src_ip=
+#     tag=<tag_value>: this OPTIONAL directive specifies a unique identifier
+#           for the current record.  This is needed for MIXT, since we may want
+#           to select a record that is not necessarily the first one
+#           that matches.  
+#
+# Each Lines must include a exactly one action
+#   Actions are 
+#     action=allow
+#     action=deny
+#
+#     action=ntlm
+#       ntlm action optional parameters:
+#           realm=<Realm Name> (optional)
+#
+#     action=ldap
+#	ldap action optional parameters:
+#	    server= <LDAP server name>[:<LDAP server port>] [<LDAP server name>[:<LDAP server port>]] ...
+#	    dn= <Base DN> 
+#           realm=<Realm Name> (optional)
+#	    uid_filter=<UID filter>  (optional) 
+#	    attr=<Additional LDAP Attribute Name> (optional)
+#	    attr_val=<Additional LDAP Attribute Value> (optional)
+#
+#
+#       NOTE: if one or more of the ldap action optional parameters is specified
+#	server= and dn= must be present. If none of the parameters is specified
+#	- default LDAP server from records.config will be used.
+#
+#	NOTE 2: All LDAP based rules will be enabled only if LDAP authentication
+#	is enabled in records.config. If LDAP authentication is disabled in 
+#	records.config and an LDAP based rule applies - access will be granted
+#	without LDAP authentication.
+#
+#     keep_hdr=<hdr Name>
+#     strip_hdr=<hdr Name>
+#
+# Note: in the case of conflicting directives, the directive
+#	that appears first applies
+#
+# Example:
+#
+##  Next line will allow access to internal.foo.com only to users 
+##  authenticated by the LDAP server on ldap.foo.com
+# 
+# dest_host=internal.foo.com action=ldap server=ldap.foo.com dn="o=foo.com"
+#
+##  Next line will allow all users (except ones trying to access internal.foo.com)
+##  to access domain foo.com 
+# 
+# dest_domain=foo.com	action=allow
+# 
+##  Next line will deny access to playboy.com
+# 
+# dest_domain=playboy.com action=deny
+# 
+##  Next line will allow access to foo401k.fidelity.com only to users from "Accounting Department." 
+##  org. unit (ou) authenticated by the LDAP server on ldap.foo.com
+#
+# dest_host=foo401k.fidelity.com action=ldap server=ldap.foo.com:389 dn="o=foo.com" attr=ou attr_val="Accounting Department."
+# 
+##  Next line will require everyone not included in any of above rules to be
+##  authenticated by the default LDAP server (see records.config for default LDAP server
+##  definitions).
+#
+# dest_ip=0.0.0.0-255.255.255.255 action=ldap
+#
+
+# things we can convert correctly (event if they are not valid)
+dest_domain=.	        port=25		action=deny
+dest_domain=yoga.com	action=deny
+dest_ip=0.0.0.0-255.255.255.255 action=allow
+dest_ip=255.0.0.0-399.255.255.255 action=allow
+dest_ip=0.0.0.0        action=allow
+dest_ip=209.131.0.0/16 action=allow
+dest_host=www.chump    action=deny
+
+# primary errors
+dest_ip=" 209.131.0.0  cheese" action=allow
+dest_ip="209.131.0.z0002" action=allow #will result in bad parse?
+dest_ip=209.131.0.0/16 dest_domain=inktomi.com action=allow
+action=allow
+
+# secondary 
+dest_domain=. port=25 action=allow
+dest_domain=. sheme=http action=allow
+dest_domain=. prefix=www action=deny
+dest_domain=. suffix=.exe action=deny
+dest_domain=. method=PUT action=deny
+dest_domain=. time="14:00" action=deny
+dest_domain=. time="14:00-15:00" action=deny
+dest_domain=. src_ip="1.2.3.4" action=deny
+dest_domain=. src_ip="1.2.3.4-5.6.7.8" action=deny
+dest_domain=. src_ip="1.2.3.4/5" action=deny
+dest_domain=. tag="Guitar Center" action=deny
+
+#secondary erros
+dest_domain=. tag="Guitar" tag="Tag" action=deny
+
+#action errors
+dest_domain=.
+dest_domain=. action="allow" action=deny
+
+#ldap
+dest_domain=. action="ldap"
+dest_domain=. action="ldap" server="ldap.inktomi.com" dn="o=Chalie's Bar"
+dest_domain=. action="ldap" server="l:133" dn="o"
+dest_domain=. action="ldap" server="l:133,t:444,z:555" dn="o"
+dest_domain=. action="ldap" server="l:133" dn="o" realm="Realm 2"
+dest_domain=. action="ldap" server="l:133" dn="o" realm="Realm 3"
+dest_domain=. action="ldap" server="ldap.inktomi.com" dn="o=Chalie's Bar"
+dest_domain=. action="ldap" server="l:133" dn="o" attr="a_name"
+dest_domain=. action="ldap" server="l:133" dn="o" attr="a_name" attr_val="z"
+dest_domain=. action="ldap" realm="BasicAuthRealm"
+dest_domain=. action="ldap" server="l" dn="o" uid_filter="uid"
+dest_domain=. action="ldap" server="l" dn="o=p d=c d=z" uid_filter="uid"
+
+#ldap errors
+dest_domain=. action="ldap" server="l" dn="o" attr_val="z"
+dest_domain=. action="ldap" server="l" dn="o" attr="z" attr="y"
+
+#ntlm
+dest_domain=. action="ntlm"
+dest_domain=. action="ntlm" redirect_url="http://www.foobar.com"
+dest_domain=. action="ntlm" realm="BasicAuthRealm"
+dest_domain=. action="ntlm" realm="BasicAuthRealm" tag=wmt
+dest_domain=. action="ntlm" realm="BasicAuthRealm" tag=wmt push=true
+
+dest_ip=209.131.0.0/16 dest_domain=inktomi.com dest_domain=. action=allow
+dest_ip= 209.131.0.0/16 action="ldap" server="l" dn="o=p d=c d=z" uid_filter="uid"
+This should be bogus line in spite of: dest_domain=crap.com action=deny
+
+# this for testing 51709
+url_regex=.* pushed=true action=ntlm
+dest_domain=. pushed=true
+
+# this for testing that method=<val> gets uppercased before adding to policy_config.xml
+dest_domain=www.some.com port=80 method=put action=deny
+
+# bug 52379
+dest_domain=pubah.com action=ldap server=ntlm.inktomi.com dn="cn=users,dc=tsdev,dc=inktomi,dc=com" attr="foo" attr_val="bar" realm=brilee uid_filter=sAMAccountName bind_dn=administrator bind_pwd_file=config/internal/pwd_1020385052.enc
+
+# bug 52379 - ntlm variant
+dest_domain=chutz.com action=ntlm server=ntlm.inktomi.com dn="cn=users,dc=tsdev,dc=inktomi,dc=com" attr="sex" attr_val="male" realm=brilee uid_filter=sAMAccountName bind_dn=administrator bind_pwd_file=config/internal/pwd_1020385052.enc

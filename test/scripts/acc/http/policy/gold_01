@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="UTF-8"?> 
+ <!-- policy_config.xml, conversion filter version 1.19 --> 
+ <Policy> 
+  
+ <Configuration> 
+ <Global> 
+    <!-- Use filter.config logic rules for lookups --> 
+    <Config name="converted-filter-config" value="1"/> 
+ </Global> 
+  
+ <!-- 
+   * ========================================================================== 
+   * LDAP authentication service: 
+   * ========================================================================== 
+  --> 
+ <Auth-Service-LDAP>
+  <Config name="enabled" value="0"/> 
+   <!-- threads defaults to number of processors --> 
+   <Config name="number-of-threads" value="0" /> 
+ </Auth-Service-LDAP> 
+ 
+<Auth-Handle-LDAP name="ldap-def">
+  <Config name="enabled" value="0"/>
+  <Config name="purge-cache-on-auth-failure" value="0"/>
+  <Config name="ttl" value="3000"/>
+  <Config name="base-dn" value="NULL"/>
+  <Config name="server-name" value="NULL"/>
+  <Config name="server-port" value="389"/>
+  <Config name="uid-filter" value="uid"/>
+</Auth-Handle-LDAP>
+
+ 
+ <!-- 
+   * ========================================================================== 
+   * The NTLM serivce definition: 
+   * 
+   * NTLM is a Windows(r) challenge/response authentication protocol.   
+   * This service provides native NTLM protocol support to clients able to  
+   * understand this protocol: currently IE and WMT clients.  Other clients 
+   * can use basic authenticate via this service. 
+   * 
+   * NTLM may be considered a pure authentication protocol in that it 
+   * does not return any other information to the proxy about the client other  
+   * than whether or not the client successfully identified itself to the 
+   * backing NT domain server (or PDC).  Since NTLM is typically backed by 
+   * an ActiveDirectory user database, more specific user authorizations may 
+   * be invoked by re-accessing the user information in the authorization step. 
+   * This is how the "NTLM group authorization" is handled in the TE proxy. 
+   * The first step, defined here, is used to authenticate the user.  The second 
+   * step:  verifying additional data in the ActiveDictory is handled via 
+   * the ActiveDirectory [LDAP] authorization function. 
+   * 
+   * NT Service definition variables: 
+   * 
+   * enabled         - 0 to disable service  1 to enable service 
+   * dc-list         - list of domain controllers, comma separated.  In a  
+   *                   windows network this should be the PDC and backup DC. 
+   * dc-load-balance - if set to '1' the client is hashed to one of the DCs  
+   * nt-domain       - windows NT Domain that this configuration is servicing. 
+   * dc-max-connections - maximum number of TCP connections to the domain  
+   *                   controller; this should be no higher than '2' for  
+   *                   most windows-based servers. 
+   * nt-host         - hostname that the proxy should use to identify itself 
+   *                   to the dc. 
+   * (undocumented:) 
+   * dc-max-conn-time  - maximum time (secs) of tcp connection to dc. 
+   * queue-len         - max number of outstanding requests over a tcp connect 
+   *                     to the dc. 
+   * req-timeout       - timeout for a request to be serviced by dc. 
+   * dc-retry-time     - length of time before retrying a request to dc. 
+   * dc-fail-threshold - number of failures before marking dc down. 
+   * fail-open         - behavior with which to treat failed dcs. 
+   * ========================================================================== 
+ --> 
+ <Auth-Service-NTLM /> 
+ <Auth-Handle-NTLM name="ntlm-def">
+  <Config name="enabled" value="0"/>
+  <Config name="cache-ttl-value" value="3600"/>
+  <Config name="dc-fail-open" value="0"/>
+  <Config name="dc-list" value="NULL"/>
+  <Config name="dc-load-balance" value="0"/>
+  <Config name="dc-max-connections" value="3"/>
+  <Config name="dc-retry-time" value="300"/>
+  <Config name="fail-threshold" value="5"/>
+  <Config name="nt-domain" value="NULL"/>
+  <Config name="nt-host" value="PROXY"/>
+  <Config name="queue-len" value="10"/>
+  <Config name="req-timeout" value="15"/>
+</Auth-Handle-NTLM>
+
+ 
+ <!-- 
+   * ========================================================================== 
+   * RADIUS authentication service: 
+   * ========================================================================== 
+  --> 
+ <Auth-Service-RADIUS>
+  <Config name="enabled" value="0"/>
+</Auth-Service-RADIUS>
+
+<Auth-Handle-RADIUS name="radius-def">
+  <Config name="max-retries" value="10"/>
+  <Config name="min-timeout" value="10"/>
+  <Config name="ttl" value="60"/>
+  <Config name="primary-server-auth-port" value="1812"/>
+  <Config name="primary-server-name" value="NULL"/>
+  <Config name="primary-server-shared-key" value="NULL"/>
+  <Config name="secondary-server-auth-port" value="1812"/>
+  <Config name="secondary-server-name" value="NULL"/>
+  <Config name="secondary-server-shared-key" value="NULL"/>
+</Auth-Handle-RADIUS>
+ 
+  
+ <!--  
+   * ========================================================================== 
+   * The static service providers handle common authorization functions. 
+   * 
+   * Authorization differs from authentication in that it is not necessarily 
+   * user-name based and it provides more detailed instruction to the protocol  
+   * [http, mixt, etc] about what actions are available.   
+   * 
+   * In the simplest (common in the old filter.config system) a user is  
+   * authenticated.  If successful the user is considered positively authorized 
+   * and if the user could not be identified the authoriztion is then negative. 
+   * The ACC authorization mechanisms allow these function to be split up.   
+   * 
+   * Static authorization services: 
+   *  
+   *  'allow-cfg' this service indicates that authorization passed, and it  
+   *              typically used in the default ACL scope to determine  
+   *              default authorization behavior:  i.e., when no other ACL  
+   *              rule matches. 
+   *              
+   *  'deny-cfg'  this service indicates that authorization failed, and it  
+   *              typically used in the default ACL scope to determine default  
+   *              authorization behavior:  i.e., when no other ACL rule matches. 
+   * ========================================================================== 
+  --> 
+ <Auzn-Service-STATIC /> 
+ <Auzn-Handle-STATIC name="allow-cfg" provider="allow" /> 
+ <Auzn-Handle-STATIC name="deny-cfg" provider="deny" /> 
+  
+ </Configuration> 
+  
+ <!-- Matching criteria and rule-sets are defined below. --> 
+ <!-- Key identifiers are of the form: 'ft-' <filter.config line number> --> 
+ <Acl> 
+ 
+<Key keyId="ft-106">
+    <Critiera type="dest_port" method="exact" value="25"/>
+</Key>
+ 
+ <!-- 
+   * ========================================================================== 
+   * Default ACL definitions 
+   * ========================================================================== 
+  --> 
+ <RuleSet scope="TE"> 
+ 
+<!-- 106: dest_domain=.	port=25		action=deny -->
+<Rule keyId="ft-106" authorizor="deny-cfg"/>
+
+<!-- DefaultRule authorizor="deny-cfg" / -->
+<DefaultRule authorizor="allow-cfg"/>
+
+</RuleSet>
+
+ 
+ <!-- not yet supported: TE:nntp and TE:ftp --> 
+ </Acl> 
+ </Policy> 
+ 

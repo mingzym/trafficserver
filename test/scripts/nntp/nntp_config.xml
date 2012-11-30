@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+nntp_xml.config
+
+Copyright 1997 Inktomi Corporation. All Rights Reserved.  Confidential.
+
+This is the configuration file for the Traffic Server NNTP module. The
+format of this file uses the XML format.
+
+$Id: nntp_config.xml,v 1.2 2003-06-01 18:38:33 re1 Exp $
+-->
+
+<nntp>
+
+	<!--
+	Section: <servers/>
+	-->
+
+	<servers>
+		<server name="%%(load1)" port="%%(loadgen_nntp_server:server)" wildmat="*"/>
+	</servers>
+
+</nntp>

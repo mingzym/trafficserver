@@ -1,0 +1,5 @@
+davidl@cachedev... pwd
+/export/workareas/davidl/traffic/deft-install
+
+davidl@cachedev... ./run_test.sh sun_dbg -p 13100 -s plugins/file-1/file_functional.pl -v -k 300
+

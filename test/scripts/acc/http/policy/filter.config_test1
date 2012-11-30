@@ -1,0 +1,107 @@
+#$Id: filter.config_test1,v 1.2 2003-06-01 18:38:31 re1 Exp $
+# filter.config
+#
+# The purpose of this file is to specify which http and ftp
+#  objects can be obtained through Traffic Server and which
+#  headers should be forwarded for http requests
+#
+# Each line consists of a set of tag value pairs.  The pairs
+#   are in the format  <tag>=<value>
+# 
+# Each line must include exactly one primary specifier
+#
+#   Primary destination specifiers are
+#     dest_domain=
+#     dest_host=
+#     dest_ip=
+#     url_regex=
+#
+#
+# Lines may include any number of the secondary specifiers but
+#    secondary specifiers may not be duplicated on the same line
+#
+#   Secondary specifiers are
+#     port= 
+#     scheme=
+#     prefix=
+#     suffix=
+#     method=
+#     time=
+#     src_ip=
+#     tag=<tag_value> 
+#    
+#     Note: 1. method secondary specifier is NOT supported in MIXT
+#           2. tag is an OPTIONAL directive which specifies a unique identifier
+#           for the current record.  This is needed for MIXT, since we may want
+#           to select a record that is not necessarily the first one
+#           that matches.  Valid values for tag are 'WMT', 'RNI', and 'QT'.
+#
+# Each Lines must include a exactly one action
+#   Actions are 
+#     action=allow
+#     action=deny
+#
+#     action=ntlm
+#       ntlm action optional parameters:
+#           realm=<Realm Name> (optional)
+#
+#	action=radius
+#       radius action optional parameters:
+#           realm=<Realm Name> (optional)
+#
+#     action=ldap
+#	ldap action optional parameters:
+#	    server= <LDAP server name>[:<LDAP server port>] [<LDAP server name>[:<LDAP server port>]] ...
+#	    dn= <Base DN> 
+#           realm=<Realm Name> (optional)
+#	    uid_filter=<UID filter>  (optional) 
+#	    attr=<Additional LDAP Attribute Name> (optional)
+#	    attr_val=<Additional LDAP Attribute Value> (optional)
+#
+#
+#       NOTE: if one or more of the ldap action optional parameters is specified
+#	server= and dn= must be present. If none of the parameters is specified
+#	- default LDAP server from records.config will be used.
+#
+#	NOTE 2: All LDAP based rules will be enabled only if LDAP authentication
+#	is enabled in records.config. If LDAP authentication is disabled in 
+#	records.config and an LDAP based rule applies - access will be granted
+#	without LDAP authentication.
+#
+#     keep_hdr=<hdr Name>
+#     strip_hdr=<hdr Name>
+#
+# Note: in the case of conflicting directives, the directive
+#	that appears first applies
+#
+# Example:
+#
+##  Next line will allow access to internal.foo.com only to users 
+##  authenticated by the LDAP server on ldap.foo.com
+# 
+# dest_host=internal.foo.com action=ldap server=ldap.foo.com dn="o=foo.com"
+#
+##  Next line will allow all users (except ones trying to access internal.foo.com)
+##  to access domain foo.com 
+# 
+# dest_domain=foo.com	action=allow
+# 
+##  Next line will deny access to playboy.com
+# 
+# dest_domain=playboy.com action=deny
+# 
+##  Next line will allow access to foo401k.fidelity.com only to users from "Accounting Department." 
+##  org. unit (ou) authenticated by the LDAP server on ldap.foo.com
+#
+# dest_host=foo401k.fidelity.com action=ldap server=ldap.foo.com:389 dn="o=foo.com" attr=ou attr_val="Accounting Department."
+# 
+##  Next line will require everyone not included in any of above rules to be
+##  authenticated by the default LDAP server (see records.config for default LDAP server
+##  definitions).
+#
+# dest_ip=0.0.0.0-255.255.255.255 action=ldap
+#
+
+# Block traffic to port 25 to prevent SMTP through the proxy/cache
+dest_domain=.	port=25		action=deny
+

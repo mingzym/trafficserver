@@ -1,0 +1,189 @@
+FEATURE INTRODUCTION (Last modified 01/10/02)
+
+Feature name:
+------------
+
+	Virus Scan.
+
+
+Synopsis of Feature:
+-------------------
+
+	This feature will support virus scanning of selected types of file before
+	the Traffic Server serves them to the client. The actual virus scanning
+	service is provided by Symantec's CarrierScan server. Traffic Server is
+	responsible for handling of the files, calling CarrierScan when necessary.
+
+Configurations of Traffic Server affected:
+-----------------------------------------
+
+	None.
+
+
+References on Feature:
+---------------------
+
+	Sambit Basu.
+	
+
+ENGINEERING DESCRIPTION
+
+Modes of operation of Feature:
+-----------------------------
+
+	Does this feature act in different ways under different configs?
+		-- No
+	
+	Is there a new records.config variable?
+		
+		-- No
+		
+	Is there any configuration parameters for the feature?
+	
+		-- Yes
+		
+			- Path, relative to the Traffic Server and accessible by the 
+			  CarrierScan server, to the temporary directory needed for 
+			  scanning
+			- Address-string for the CarrierScan server (ip:port)
+			- Address for the error page (e.g. 
+			  http://www.inktomi.com/vsError.htm")
+			- Maximum amount of time the plugin waits for the VirusScan server
+			  to return a document before it times out.
+			- Maximum number of simultaneous connection the plugin should
+			  handle.
+			- File extensions to be scanned for viruses
+			- List of trusted domains. Documents from this domains are not
+			  scanned.
+			  
+	How those parameters are administered?
+	
+		Using three config files: vscan.config, extensions.config and 
+		trusted.config, all of 	which must reside in the plugins directory.  
+
+
+Risk points of feature:
+----------------------
+
+	This might impact performance of TS.
+
+Effect on SDK/API:
+-----------------
+
+	-- None.
+
+Effect on WebUI:
+---------------
+
+	-- None
+	
+
+Requirement on Server Management:
+--------------------------------
+
+	Does the new feature need install work?
+	
+		-- No. However CarrierScan server needs to be installed separately.
+	
+	New stats?
+	
+		-- Yes. Plugin print a set of cumulative statistics to stdout every 2 
+		   minues.
+	
+	New configuration variables or files?
+	
+		-- New files vscan.config, extensions.config, trusted.config
+		-- Configuration variables are added in vscan.config
+			- temp.path
+			- scan.server
+			- error.redirection
+			- max.connection
+			- server.timeout
+		
+		
+	
+	Modifications needed to be done by customer:
+		
+		-- Yes. parameters in the configuation files.
+
+Module tests, diagnostic output, and statistics on feature:
+----------------------------------------------------------
+
+	What new statistics cover this feature (also, how does QA evaluate them)?
+	
+		-- The plugin prints the following cumulative stats:
+		
+			(1) Total number of transactions: number of requests TS received
+			(2) Total number of operations (through the plugin): number of
+			    requests the plugin processed. This is a subset of (1). The
+				number may be lower than (1) for various reasons: rules in
+				extension.config or trusted.config files, rule of
+				max.connection.
+			(3) Total number of disc writes: Subset of (2).
+			(4) Total number of scans: Number of documents sent to the VirusScan
+			    server for scanning. Subset of (3).
+			(5) Avg. doc size: Average document size of (2) in KiloBytes
+			(6) Avg disc write time: in milliseconds.
+			(7) Avg scan time: The time in milliseconds between a request is 
+			    made to the VisrusScan server and VirusScan server returns a 
+				result. 
+			(8) Client aborts (after CS return): The number of times the user
+			    cancelled operation (or connection dropped) after the scanning
+				request was sent but before any data was sent to the user.
+
+	Are there diagnostic flags for this feature?
+	
+		-- Use "vscan.*" or the following:
+		
+			- "vscan_txn"
+			- "vscan_plugin"
+			- "vscan_plugin_calls"
+			- "vscan_transform"
+			- "vscan_counter"
+			- "vscan_memory"
+			- "vscan_time"
+			- "vscan_stat"
+			- "vscan_mutex"
+	
+	
+Engineering description of Feature:
+----------------------------------
+
+	When a user sends out a http request to Traffic Server, Traffic Server 
+	compares this transaction's requested file extension with the list of 
+	extensions in extensions.config. If a match is found the transaction in 
+	marked for scanning.
+	
+	Traffic Server does a cache-lookup. If it results in a cache-miss or a
+	stale-hit, the origin server is contacted. If it is a cache-hit, Traffic
+	Server looks for a particular header in the the cached document which
+	identifies that the document has already been scanned and that it is clean.
+	If the header is found, the document is served and transaction is closed. If
+	the header is not found, Traffic Server handles the transaction as if it's a
+	cache-miss and Origin Server is contacted.
+	
+	When the fresh document is received from the Origin Server, the document is
+	saved in a temporary folder. Then the CarrierScan server is contacted. It is
+	passed with the temporary file location and a scan is requested. Once the
+	scan is finished, CarrierScan Server returns a result-code to the Traffic
+	Server informing whether the scan was successful. Successful scan means
+	either the file is virus-free or the file has been successfully cleaned by
+	the CarrierScan Server. In that case, the Traffic Server serves the 
+	document; caches the clean document adding a special header marking that the 
+	file has been scanned and that it is clean.
+	
+	In case, the scanner fails to clean the document the Traffic Server either
+	sends an error message, or if the error.redirection parameter is set to a
+	non-null velue, sends a 302 temporary redirection response to the client.
+	
+
+
+Notes and comments by developing engineer:
+-----------------------------------------
+
+	Anything else that QA needs to know?
+	
+		-- None
+
+
+
