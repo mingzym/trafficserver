@@ -73,7 +73,7 @@ ArgumentDescription argument_descriptions[] = {
   { "kill_wait", 'k', "Time to wait for a kill to finish", 
      "I", &kill_wait, NULL, NULL},
   { "action_tags", 'B', "Behavior Tags", "S1023", action_tags, NULL, NULL},
-  { "help", 'h', "HELP!", NULL, NULL, NULL, usage }
+  { "help", 'h', "HELP!", NULL, NULL, NULL, print_usage }
 };
 int n_argument_descriptions = SIZE(argument_descriptions);
 
@@ -81,11 +81,11 @@ void PM_output_log_line(const char* start, const char* end,
 			const char* iname, const char* stream_id) {
 
     struct timeval tp;
-    char *buffer, timestamp_buf[48];
+    char timestamp_buf[48];
 
     ink_gethrtimeofday(&tp,NULL);
     time_t cur_clock = (time_t)tp.tv_sec;
-    buffer = ink_ctime_r(&cur_clock,timestamp_buf);
+    ink_ctime_r(&cur_clock,timestamp_buf);
     sprintf(&(timestamp_buf[19]),".%03d",(int)(tp.tv_usec / 1000));
 
     char prefix_buffer[1024];
@@ -104,7 +104,7 @@ void PM_output_log_line(const char* start, const char* end,
 void PM_log_line_va(const char* level, const char* format_str, va_list ap) {
 
     char line_buf[2048];
-    int r = ink_vsnprintf(line_buf, 2047, format_str, ap);
+    int r = vsnprintf(line_buf, 2047, format_str, ap);
     if (r >= 2047) {
 	line_buf[2047] = '\0';
 	r = 2047;
@@ -118,7 +118,7 @@ void PM_Note(const char* format_str, ...) {
     va_list ap;
 
     va_start(ap,format_str);
-    diags->print_va(NULL, DL_Note, NULL, NULL, format_str, ap);
+    diags->print_va(NULL, DL_Note, NULL, format_str, ap);
     va_end(ap);
     
     va_start(ap,format_str);
@@ -132,7 +132,7 @@ void PM_Warning(const char* format_str, ...) {
     va_list ap;
 
     va_start(ap,format_str);
-    diags->print_va(NULL, DL_Warning, NULL, NULL, format_str, ap);
+    diags->print_va(NULL, DL_Warning, NULL, format_str, ap);
     va_end(ap);
     
     va_start(ap,format_str);
@@ -146,7 +146,7 @@ void PM_Error(const char* format_str, ...) {
     va_list ap;
 
     va_start(ap,format_str);
-    diags->print_va(NULL, DL_Error, NULL, NULL, format_str, ap);
+    diags->print_va(NULL, DL_Error, NULL, format_str, ap);
     va_end(ap);
     
     va_start(ap,format_str);
@@ -160,7 +160,7 @@ void PM_Fatal(const char* format_str, ...) {
     va_list ap;
 
     va_start(ap,format_str);
-    diags->print_va(NULL, DL_Fatal, NULL, NULL, format_str, ap);
+    diags->print_va(NULL, DL_Fatal, NULL, format_str, ap);
     va_end(ap);
     
     va_start(ap,format_str);
@@ -241,7 +241,7 @@ ExitHandler::ExitHandler() : S_Continuation() {
 void ExitHandler::handle_exit(s_event_t event, void* data) {
 
     ink_release_assert(event == SEVENT_EXIT_NOTIFY);
-    int status = (int) data;
+    int status = (size_t) data;
 
     accept_handler->stop();
     log_sender->flush_output();
@@ -614,6 +614,7 @@ void NetCmdHandler::process_create_cmd(RafCmd* cmd) {
 	    break;
 	default:
 	    ink_release_assert(0);
+	    /* no break */
     }
 }
 
@@ -691,6 +692,7 @@ void NetCmdHandler::handle_create_rundir_rm(s_event_t event, void* data) {
 	break;
 	default:
 	    ink_release_assert(0);
+	    /* no break */
     }
 }
 
@@ -1164,12 +1166,12 @@ void NetCmdHandler::process_stat_file_cmd(RafCmd* cmd) {
     reply(1) = strdup("0");
     reply(2) = strdup("size");
 
-    snprintf(num_buf, 63, "%b64d", (ink64) stat_info.st_size);
+    snprintf(num_buf, 63, "%" PRId64 "", (int64_t) stat_info.st_size);
     num_buf[63] = '\0';
     reply(3) = strdup(num_buf);
 
     reply(4) = strdup("mod_date");
-    snprintf(num_buf, 63 , "%b32d", (inku32) stat_info.st_mtime);
+    snprintf(num_buf, 63 , "%" PRIu32 "", (uint32_t) stat_info.st_mtime);
     num_buf[63] = '\0';
     reply(5) = strdup(num_buf);
 
@@ -1741,7 +1743,7 @@ void NetCmdHandler::output_query_process_int(ProcRecord* pr,
     (*raf_resp)(*next_index) = strdup(tmp);
     (*next_index)++;
 
-    ink_sprintf(tmp, "%d", value);
+    sprintf(tmp, "%d", value);
     (*raf_resp)(*next_index) = strdup(tmp);
     (*next_index)++;
 }
@@ -1935,28 +1937,10 @@ void NetCmdHandler::handle_execute_stop(s_event_t event, void* data) {
 	}
 	default:
 	    ink_release_assert(0);
+	    /* no break */
     }
 }
 
-LogHandler::LogHandler() :
-    proc_record(NULL),
-    stream_id(NULL),
-    read_buffer(NULL),
-    FD_Handler()
-{
-}
-
-LogHandler::~LogHandler() {
-
-    SIO::remove_fd_handler(this);
-
-    if (read_buffer) {
-	delete read_buffer;
-	read_buffer = NULL;
-    }
-
-    proc_record = NULL;
-}
 
 void LogHandler::start(ProcRecord* pr, int new_fd, const char* sid) {
     this->fd = new_fd;
@@ -2126,7 +2110,7 @@ ProcRecord::~ProcRecord() {
     parent = NULL;
 
     ProcPortBinding* pb;
-    while (pb = port_bindings.pop()) {
+    while ((pb = port_bindings.pop())) {
 	delete pb;
     }
 }
@@ -2742,7 +2726,7 @@ S_Action* ProcRecord::set_watch(S_Continuation* c) {
     S_Action* a = new S_Action;
     a->s_cont = c;
 
-    notify_list.push(a, a->action_link);
+    notify_list.push(a);
 
     return a;
 }
@@ -2753,9 +2737,9 @@ void ProcRecord::notify_watchers() {
     S_Action* next;
 
     while (a != NULL) {
-	next = a->action_link.next;
+	next = a->link.next;
 	a->s_cont->handle_event(SEVENT_PROC_STATE_CHANGE, this);
-	notify_list.remove(a, a->action_link);
+	notify_list.remove(a);
 	delete a;
 	a = next;
     }
@@ -3265,7 +3249,7 @@ S_Action* RecursiveRmDir::do_remove_dir(S_Continuation* cont,
 	return &action;;
     }
 
-    if (stat_info.st_mode & S_IFDIR == 0) {
+    if (stat_info.st_mode & (S_IFDIR == 0)) {
 	PM_Error("Unable to find old instance dir %s is not a directory", dir_to_rm);
 	SIO::schedule_in(this, 0);
 	return &action;;

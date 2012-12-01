@@ -178,7 +178,7 @@ struct ProcPortBinding {
 	int port;
     } value;
 
-    Link<ProcPortBinding> link;
+    LINK(ProcPortBinding, link);
 };
 
 enum proc_status_t {
@@ -255,7 +255,7 @@ class ProcRecord : public NonAtomicRefCountObj {
 
     char** env_vars;
 
-    Link<ProcRecord> link;
+    LINK(ProcRecord, link);
 
     DLL<ProcPortBinding> port_bindings;
 

@@ -64,7 +64,7 @@ struct  FD_Handler : public S_Continuation {
     int fd;
     poll_interest_t poll_interest;
 
-    Link<FD_Handler> link;
+    LINK(FD_Handler, link);
 };
 
 struct S_Action {
@@ -76,7 +76,7 @@ struct S_Action {
     int cancelled;
     S_Continuation* s_cont;
 
-    Link<S_Action> action_link;
+    LINK(S_Action, link);
 };
 
 struct S_Event : public S_Action {

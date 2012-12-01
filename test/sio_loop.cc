@@ -271,7 +271,7 @@ void SIO::remove_fd_handler(FD_Handler* fdh) {
 S_Action::S_Action() :
     cancelled(0),
     s_cont(NULL),
-    action_link()
+    link()
 {
 }
 
@@ -300,7 +300,7 @@ S_Event* SIO::schedule_in(S_Continuation* c, int ms) {
     e->when = ink_get_based_hrtime_internal() + HRTIME_MSECONDS(ms);
     e->s_cont = c;
 
-    event_list.push(e, e->event_link);
+    event_list.push(e);
     num_active_events++;
 
     return e;
@@ -308,7 +308,7 @@ S_Event* SIO::schedule_in(S_Continuation* c, int ms) {
 
 void remove_event(S_Event* e) {
 
-    event_list.remove(e, e->event_link);
+    event_list.remove(e);
     num_active_events--;
     delete e;
 
@@ -406,6 +406,7 @@ void SIO::run_loop_once() {
 		break;
 	    case POLL_INTEREST_WRITE:
 		pfd[i].events = POLLOUT;
+		/* no break */
 	    case POLL_INTEREST_RW:
 		pfd[i].events = POLLIN | POLLOUT;
 		break;

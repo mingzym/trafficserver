@@ -17,7 +17,6 @@
 #include <fcntl.h>
 
 #include "Diags.h"
-#include "snprintf.h"
 
 #include "log_sender.h"
 #include "test_utils.h"
@@ -69,7 +68,7 @@ void LogSender::start_to_file(const char* file_arg) {
 void LogSender::start_to_net(unsigned int ip, int port) {
     log_file_name = (char*) malloc(64);
 
-    ink_sprintf(log_file_name, "%u.%u.%u.%u:%d",
+    sprintf(log_file_name, "%u.%u.%u.%u:%d",
 		((unsigned char*)&ip)[0], ((unsigned char*)&ip)[1], 
 		((unsigned char*)&ip)[2], ((unsigned char*)&ip)[3], port);
 

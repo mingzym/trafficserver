@@ -31,7 +31,7 @@ class LogSender : public FD_Handler {
     void flush_output();
     void close_output();
 
-    const char* LogSender::roll_log_file(const char* roll_name);
+    const char* roll_log_file(const char* roll_name);
 
   private:
     char* log_file_name;

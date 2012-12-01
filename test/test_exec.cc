@@ -178,7 +178,7 @@ void TE_output_log_line(const char* start, const char* end,
 void TE_log_line_va(const char* level, const char* format_str, va_list ap) {
 
     char line_buf[2048];
-    int r = ink_vsnprintf(line_buf, 2047, format_str, ap);
+    int r = vsnprintf(line_buf, 2047, format_str, ap);
     if (r >= 2047) {
 	line_buf[2047] = '\0';
 	r = 2047;
