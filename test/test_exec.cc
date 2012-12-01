@@ -119,7 +119,7 @@ ArgumentDescription argument_descriptions[] = {
   { "version", 'V', "Show Version", "F", &show_version, NULL, NULL},
   { "debug_tags", 'T', "Debug Tags", "S1023", error_tags, NULL, NULL},
   { "action_tags", 'B', "Behavior Tags", "S1023", action_tags, NULL, NULL},
-  { "help", 'h', "HELP!", NULL, NULL, NULL, print_usage }
+  { "help", 'h', "HELP!", NULL, NULL, NULL, usage }
 };
 int n_argument_descriptions = SIZE(argument_descriptions);
 
@@ -132,11 +132,11 @@ void TE_output_log_line(const char* start, const char* end,
 			const char* iname, const char* stream_id) {
 
     struct timeval tp;
-    char *buffer, timestamp_buf[48];
+    char timestamp_buf[48];
 
     ink_gethrtimeofday(&tp,NULL);
     time_t cur_clock = (time_t)tp.tv_sec;
-    buffer = ink_ctime_r(&cur_clock,timestamp_buf);
+    ink_ctime_r(&cur_clock,timestamp_buf);
     sprintf(&(timestamp_buf[19]),".%03d",(int)(tp.tv_usec / 1000));
 
     char prefix_buffer[1024];
@@ -1184,7 +1184,7 @@ static char* pm_run_internal(HostRecord* host_rec, const char* binary, const cha
     if (args) {
 	sio_buffer args_subs;
 	int sub_errors = 0;
-	int r = do_substitutions(args, strlen(args), &args_subs, &sub_errors);
+	do_substitutions(args, strlen(args), &args_subs, &sub_errors);
 
 	if (sub_errors > 0) {
 	    TE_Warning("pm_run %s had %d substitution errors on args",
@@ -1247,7 +1247,7 @@ char* pm_run(const char* hostname, const char* binary, const char* args, int tim
 
     check_and_process_kill_signal();
 
-    int return_int = -2;
+   // int return_int = -2;
     HostRecord* host_rec = find_or_setup_host(hostname, "anon");
 
     if (host_rec == NULL) {
@@ -2130,7 +2130,7 @@ static char** raf_host_port(unsigned int ip, int port,
 	tmp = raf_args;
 	while (*tmp) {
 	    int sub_errors;
-	    int r = do_subs_and_replace(tmp, &sub_errors);
+	    do_subs_and_replace(tmp, &sub_errors);
 	    if (sub_errors > 0) {
 		TE_Warning("Subsitution failed for raf args : %s", *tmp);
 	    }
@@ -2792,7 +2792,7 @@ int load_defs_file() {
 
 void my_test_script() {
 
-    char* create_args[] = {"package", "mtest", NULL};
+    char * create_args[] = {(char *) "package", (char *) "mtest", NULL};
 
     pm_create_instance("jtest1", "localhost", create_args);
     pm_start_instance("jtest1", NULL);
@@ -2982,7 +2982,7 @@ int send_log_collator_roll(const char* test_name) {
 	return -1;
     }
     
-    int r = do_raf(fd, &request, &response);
+    do_raf(fd, &request, &response);
     close(fd);
 
     if (response.length() < 2) {
@@ -3490,7 +3490,7 @@ UserDirInfo* setup_user_and_dir_info() {
 
     ur->hostname = (char*) malloc(256);
     strcpy(ur->hostname, "UNKNOWN");
-    int r = gethostname(ur->hostname, 255);
+    gethostname(ur->hostname, 255);
     ur->hostname[255] = '\0';
 
     // Unqualifed hostnames will break if all the machines
@@ -3625,7 +3625,7 @@ pid_t reap_and_kill_child(pid_t child_pid, int* exit_status) {
     }
 
     if (reaped_pid > 0) {
-	Debug("child", "reaped child pid %d; status %d", reaped_pid, exit_status);
+	Debug("child", "reaped child pid %d; status %p", reaped_pid, exit_status);
     } else {
 	Debug("child", "failed to reap child pid %d", reaped_pid);
     }
@@ -3716,7 +3716,7 @@ void init_dir_stuff() {
 
     if (r < 0) {
 	TE_Fatal("Unable to access to stuff path %s : %s", stuff_path, strerror(errno));
-    } else if (stat_info.st_mode & S_IFDIR == 0) {
+    } else if (stat_info.st_mode & (S_IFDIR == 0)) {
 	TE_Error("Unable to access to stuff path %s is not a directory", stuff_path);
     }
 

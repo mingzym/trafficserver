@@ -19,7 +19,6 @@
 
 #include "ink_platform.h"
 #include "Diags.h"
-#include "snprintf.h"
 
 // From test_exec.cc
 extern UserDirInfo* ud_info;

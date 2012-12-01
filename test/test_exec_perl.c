@@ -12,7 +12,7 @@
  ****************************************************************************/
 
 #include <EXTERN.h>
-#include "perl.h"
+#include <perl.h>
 
 static void xs_init (pTHX);
 

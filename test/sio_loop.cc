@@ -26,7 +26,7 @@ DLL<S_Event> event_list;
 
 const int default_poll_timeout = 500;
 
-void panic_perror(char * s) {
+void panic_perror(const char * s) {
   perror(s);
   SIO::do_exit(1);
 }
@@ -203,10 +203,10 @@ void S_Continuation::handle_event(s_event_t event, void* data) {
 }
 
 FD_Handler::FD_Handler() :
+    S_Continuation(),
     fd(-1),
     poll_interest(POLL_INTEREST_NONE),
-    link(),
-    S_Continuation()
+    link()
 {
 }
 
@@ -285,9 +285,9 @@ void S_Action::cancel() {
 }
 
 S_Event::S_Event() :
+    S_Action(),
     when((ink_hrtime)0),
-    event_link(),
-    S_Action()
+    event_link()
 {
 }
 
@@ -317,7 +317,7 @@ void run_event(S_Event* e) {
 
     ink_debug_assert(!e->cancelled);
     if (!e->cancelled) {
-	Debug("event", "Calling back s_cont 0x%X with timer event", e->s_cont);
+	Debug("event", "Calling back s_cont 0x%p with timer event", e->s_cont);
 	e->s_cont->handle_event(SEVENT_TIMER, e);
     }
 
@@ -410,6 +410,8 @@ void SIO::run_loop_once() {
 	    case POLL_INTEREST_RW:
 		pfd[i].events = POLLIN | POLLOUT;
 		break;
+	    case POLL_INTEREST_NONE:
+	       break;
 	}
 	cur = cur->link.next;
 	i++;
@@ -454,7 +456,7 @@ void SIO::add_exit_handler(S_Continuation* c) {
 void SIO::do_exit(int status) {
 
     if (exit_handler) {
-	exit_handler->handle_event(SEVENT_EXIT_NOTIFY, (void*)status);
+	exit_handler->handle_event(SEVENT_EXIT_NOTIFY, (void*)(long)status);
 	exit(status);
     } else {
 	exit(status);

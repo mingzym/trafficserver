@@ -24,7 +24,7 @@
 #include "Diags.h"
 #include "ink_args.h"
 #include "ink_sprintf.h"
-//#include "rafencode.h"
+#include "rafencode.h"
 #include "ink_time.h"
 #include "ParseRules.h"
 #include "Ptr.h"
@@ -73,7 +73,7 @@ ArgumentDescription argument_descriptions[] = {
   { "kill_wait", 'k', "Time to wait for a kill to finish", 
      "I", &kill_wait, NULL, NULL},
   { "action_tags", 'B', "Behavior Tags", "S1023", action_tags, NULL, NULL},
-  { "help", 'h', "HELP!", NULL, NULL, NULL, print_usage }
+  { "help", 'h', "HELP!", NULL, NULL, NULL, usage }
 };
 int n_argument_descriptions = SIZE(argument_descriptions);
 
@@ -328,6 +328,7 @@ cmd_dispatch_t cmd_dispatcher[] =  {
 };
 
 NetCmdHandler::NetCmdHandler() :
+    SioRafServer(),
     pkg_fd(-1),
     pkg_len_left(0),
     get_fd(-1),
@@ -346,8 +347,7 @@ NetCmdHandler::NetCmdHandler() :
     log_read_complete(0),
     success_prefix(NULL),
     success_prefix_len(0),
-    log_read_buffer(NULL),
-    SioRafServer()
+    log_read_buffer(NULL)
 {
 }
 
@@ -1709,7 +1709,7 @@ void NetCmdHandler::output_query_process_info(ProcRecord* pr,
 					      RafCmd* raf_resp,
 					      int* next_index) {
 
-    bool all_values = false;
+    //bool all_values = false;
     if (strcasecmp(q_proc_value, "*") == 0) {
 	output_query_process_int(pr, "pid", raf_resp,
 				 next_index, pr->pid);
@@ -1717,7 +1717,7 @@ void NetCmdHandler::output_query_process_info(ProcRecord* pr,
 	output_query_process_int(pr, "exit_status", raf_resp,
 				 next_index, pr->exit_status);
 
-	all_values = true;
+	//all_values = true;
     } else if (strcasecmp(q_proc_value, "pid") == 0) {
 	output_query_process_int(pr, q_proc_value, raf_resp,
 				 next_index, pr->pid);
@@ -1941,6 +1941,25 @@ void NetCmdHandler::handle_execute_stop(s_event_t event, void* data) {
     }
 }
 
+LogHandler::LogHandler() :
+    FD_Handler(),
+    proc_record(NULL),
+    stream_id(NULL),
+    read_buffer(NULL)
+{
+}
+
+LogHandler::~LogHandler() {
+
+    SIO::remove_fd_handler(this);
+
+    if (read_buffer) {
+        delete read_buffer;
+        read_buffer = NULL;
+    }
+
+    proc_record = NULL;
+}
 
 void LogHandler::start(ProcRecord* pr, int new_fd, const char* sid) {
     this->fd = new_fd;
@@ -2792,9 +2811,9 @@ int ProcRecord::write_config(const char* config) {
 }
 
 InstallerSendInput::InstallerSendInput() :
+    FD_Handler(),
     send_buffer(NULL),
-    master(NULL),
-    FD_Handler()
+    master(NULL)
 {
 }
 
@@ -2956,15 +2975,15 @@ void InstallerReadOutput::handle_read(s_event_t event, void* data) {
 }
 
 InstallerHandler::InstallerHandler() :
+    S_Continuation(),
     installer_rec(NULL),
     error_seen(false),
-    send_status(0),
     read_status(0),
+    send_status(0),
     timeout_event(NULL),
     watch_proc(NULL),
     output_reader(NULL),
-    input_sender(NULL),
-    S_Continuation()
+    input_sender(NULL)
 {
 }
 
@@ -3122,10 +3141,10 @@ void InstallerHandler::set_send_status(int status) {
 }
 
 EventForwarder::EventForwarder() :
+    S_Continuation(),
     cont(NULL),
     event(SEVENT_NONE),
-    data(NULL),
-    S_Continuation()
+    data(NULL)
 {
     my_handler = (SCont_Handler)&EventForwarder::handle_event;
 }

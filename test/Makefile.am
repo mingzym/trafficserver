@@ -3,7 +3,7 @@ AUTOMAKE_OPTIONS = 1.2 foreign no-installman no-installinfo
 #INCLUDES += @TBD_1_INCDIR@
 #INCLUDES += @TBD_2_INCDIR@
 #INCLUDES += @TBD_3_INCDIR@
-AM_CPPFLAGS = @CPPFLAGS@
+AM_CPPFLAGS = @CPPFLAGS@ -I/usr/lib64/perl5/5.16.1/x86_64-linux-thread-multi/CORE/
 AM_CPPFLAGS += -I$(top_srcdir)/common/include
 AM_CPPFLAGS += -I$(top_srcdir)/lib/ts
 
@@ -16,6 +16,7 @@ noinst_PROGRAMS = proc_manager test_exec test_log_collate
 proc_manager_SOURCES = proc_manager.cc \
 		       log_sender.cc \
 		       raf_cmd.cc \
+		       rafencode.cc \
 		       sio_buffer.cc \
 		       sio_loop.cc \
 		       sio_raf_server.cc \
@@ -24,7 +25,7 @@ proc_manager_SOURCES = proc_manager.cc \
 proc_manager_LDFLAGS = @EXTRA_CXX_LDFLAGS@
 proc_manager_LDADD = $(top_builddir)/lib/ts/libtsutil.la \
 		     @LIBSOCKET@ @LIBNSL@ \
-		     @LIBRESOLV@ @LIBRT@ @LIBTHREAD4INK@ -lm @LIBDL@
+		     @LIBRESOLV@ @LIBRT@ -lm @LIBDL@
 
 
 test_log_collate_SOURCES = test_log_collate.cc \
@@ -38,7 +39,7 @@ test_log_collate_SOURCES = test_log_collate.cc \
 test_log_collate_LDFLAGS = @EXTRA_CXX_LDFLAGS@
 test_log_collate_LDADD = $(top_builddir)/lib/ts/libtsutil.la \
 		     	 @LIBSOCKET@ @LIBNSL@ \
-		     	 @LIBRESOLV@ @LIBRT@ @LIBTHREAD4INK@ -lm @LIBDL@
+		     	 @LIBRESOLV@ @LIBRT@ -lm @LIBDL@
 
 test_exec_SOURCES = test_exec.cc \
 		    raf_cmd.cc \
@@ -56,7 +57,7 @@ test_exec_LDADD = $(top_builddir)/lib/ts/libtsutil.la\
 		     -L/usr/local/lib  \
 		     -lperl \
 		     @LIBSOCKET@ @LIBNSL@ \
-		     @LIBRESOLV@ @LIBRT@ @LIBTCL@ @LIBDL@ @LIBTHREAD4INK@ \
+		     @LIBRESOLV@ @LIBRT@ @LIBTCL@ @LIBDL@ \
 		     @LIBCRYPT@ -lm @LIBGCC@ 
 
 test_interp_glue_wrap.c: test_interp_glue.i test_interp_glue.h

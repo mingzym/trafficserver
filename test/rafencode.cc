@@ -352,7 +352,7 @@ raf_decode(const char *inbuf, int inlen, char *outbuf, int outlen,
 {
     const char *ip, *iend;
     char *op, *oend, c;
-    int n, inquote;
+    int inquote;
 
     if (inlen == -1) {
 	inlen = strlen(inbuf);
@@ -366,7 +366,6 @@ raf_decode(const char *inbuf, int inlen, char *outbuf, int outlen,
     op = outbuf;
     oend = outbuf + outlen;
     inquote = 0;
-    n = 0;
     while (ip != iend && isspace(*ip)) {
 	ip++;
     }

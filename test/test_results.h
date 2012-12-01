@@ -38,7 +38,7 @@ struct TestResult {
     time_t time_start;
     time_t time_stop;
 
-    Link<TestResult> link;
+    LINK(TestResult, link);
 };
 
 struct TestRunResults {

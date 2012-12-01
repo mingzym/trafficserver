@@ -26,9 +26,9 @@
 static const int SIZE_32K = 32768;
 
 LogSender::LogSender() :
+    FD_Handler(),
     log_file_name(NULL),
-    output_log_buffer(NULL),
-    FD_Handler()
+    output_log_buffer(NULL)
 {
     my_handler = (SCont_Handler) &LogSender::handle_output;
 }

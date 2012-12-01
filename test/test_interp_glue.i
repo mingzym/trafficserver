@@ -2,7 +2,7 @@
 %{
 #include "test_interp_glue.h"
 %}
-%include pointer.i
+%include cpointer.i
 
 %typemap(perl5,in) char** {
     AV* av =   SvRV($input);
@@ -63,8 +63,8 @@
 
 %typemap(perl5,out) char* {
     char* from_c = $1;
-    int i;
-    int num_el = 0;
+    //int i;
+    //int num_el = 0;
 
     if (from_c) {
         ST(argvi) = sv_newmortal();

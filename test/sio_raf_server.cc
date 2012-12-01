@@ -23,11 +23,11 @@
 
 
 SioRafServer::SioRafServer() :
+    FD_Handler(),
     raf_cmd(NULL),
     exit_mode(RAF_EXIT_NONE),
     cmd_buffer(NULL),
-    resp_buffer(NULL),
-    FD_Handler()
+    resp_buffer(NULL)
 {
 }
 
