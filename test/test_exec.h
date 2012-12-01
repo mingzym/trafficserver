@@ -40,7 +40,7 @@ struct HostRecord {
     sio_buffer* read_buffer;
 
     InkHashTable* package_table;
-    Link<HostRecord> link;
+    LINK(HostRecord, link);
 };
 
 struct InstanceRecord {
@@ -54,7 +54,7 @@ struct InstanceRecord {
     HostRecord* host_rec;
 
     InkHashTable* port_bindings;
-    Link<InstanceRecord> link;
+    LINK(InstanceRecord, link);
 };
 
 struct UserDirInfo {

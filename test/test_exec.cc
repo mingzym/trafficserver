@@ -18,11 +18,10 @@
 #include <netdb.h>
 
 #include "ink_args.h"
-#include "snprintf.h"
 #include "ink_hrtime.h"
 #include "Diags.h"
 #include "Tokenizer.h"
-#include "InkTime.h"
+#include "ink_time.h"
 
 #include "sio_buffer.h"
 #include "sio_loop.h"
@@ -120,7 +119,7 @@ ArgumentDescription argument_descriptions[] = {
   { "version", 'V', "Show Version", "F", &show_version, NULL, NULL},
   { "debug_tags", 'T', "Debug Tags", "S1023", error_tags, NULL, NULL},
   { "action_tags", 'B', "Behavior Tags", "S1023", action_tags, NULL, NULL},
-  { "help", 'h', "HELP!", NULL, NULL, NULL, usage }
+  { "help", 'h', "HELP!", NULL, NULL, NULL, print_usage }
 };
 int n_argument_descriptions = SIZE(argument_descriptions);
 
@@ -192,7 +191,7 @@ void TE_Status(const char* format_str, ...) {
     va_list ap;
 
     va_start(ap,format_str);
-    diags->print_va(NULL, DL_Status, NULL, NULL, format_str, ap);
+    diags->print_va(NULL, DL_Status, NULL, format_str, ap);
     va_end(ap);
     
     va_start(ap,format_str);
@@ -206,7 +205,7 @@ void TE_Note(const char* format_str, ...) {
     va_list ap;
 
     va_start(ap,format_str);
-    diags->print_va(NULL, DL_Note, NULL, NULL, format_str, ap);
+    diags->print_va(NULL, DL_Note, NULL, format_str, ap);
     va_end(ap);
     
     va_start(ap,format_str);
@@ -220,7 +219,7 @@ void TE_Warning(const char* format_str, ...) {
     va_list ap;
 
     va_start(ap,format_str);
-    diags->print_va(NULL, DL_Warning, NULL, NULL, format_str, ap);
+    diags->print_va(NULL, DL_Warning, NULL, format_str, ap);
     va_end(ap);
     
     va_start(ap,format_str);
@@ -234,7 +233,7 @@ void TE_Error(const char* format_str, ...) {
     va_list ap;
 
     va_start(ap,format_str);
-    diags->print_va(NULL, DL_Error, NULL, NULL, format_str, ap);
+    diags->print_va(NULL, DL_Error, NULL, format_str, ap);
     va_end(ap);
     
     va_start(ap,format_str);
@@ -248,7 +247,7 @@ void TE_Fatal(const char* format_str, ...) {
     va_list ap;
 
     va_start(ap,format_str);
-    diags->print_va(NULL, DL_Fatal, NULL, NULL, format_str, ap);
+    diags->print_va(NULL, DL_Fatal, NULL, format_str, ap);
     va_end(ap);
     
     va_start(ap,format_str);
@@ -692,7 +691,7 @@ int push_package(HostRecord* hrec, const char* pkg_name,
     }
 
     length_buf = (char*) malloc(32);
-    ink_sprintf(length_buf, "%b64d", stat_info.st_size);
+    sprintf(length_buf, "%" PRId64 "", stat_info.st_size);
 
     // Send the raf request
     request(0) = hrec->get_id_str();
@@ -1443,7 +1442,7 @@ static void set_cur_script_path(const char* default_script_dir, const char* scri
     char* last = NULL;
     char* tmp = cur_script_path;
 
-    while (tmp = strchr(tmp, '/')) {
+    while ((tmp = strchr(tmp, '/'))) {
 	last = tmp;
 	tmp += 1;
     }
@@ -1778,7 +1777,7 @@ int wait_for_instance_death(const char* instance, int timeout_ms) {
 	    safe_sleep(100);
 	}
     }
-
+    return 0;
 }
 
 
@@ -2366,7 +2365,7 @@ int output_substitution(sio_buffer* output_buffer, const char* modifier_str,
 	}
     }
 
-    if (modifiers & SUB_MOD_IP_ADDR || modifiers & SUB_MOD_IP_RESOLVE) {
+    if ((modifiers & SUB_MOD_IP_ADDR) || (modifiers & SUB_MOD_IP_RESOLVE)) {
 
 	// We need a NULL terminated string for the lookup
 	char* hname = (char*) malloc(value_len + 1);
@@ -3286,7 +3285,7 @@ void prep_and_run_perl(const char* test_script_arg,
 
     char* argv_str = (char*) malloc(len + 1 + 2);
 
-    ink_sprintf(argv_str, "%s %s%s%s %s",
+    sprintf(argv_str, "%s %s%s%s %s",
 		perl_args,
 		(test_script_arg[0] == '/') ? "" : script_dir,
 		(test_script_arg[0] == '/') ? "" : "/",

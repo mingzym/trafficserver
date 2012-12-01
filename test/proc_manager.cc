@@ -3034,6 +3034,7 @@ void InstallerHandler::watch_installer(s_event_t event, void* data) {
 	    break;
 	default:
 	    ink_release_assert(0);
+	    /* no break */
     }
 }
 
@@ -3210,6 +3211,7 @@ void RecursiveRmDir::handle_rm_complete(s_event_t e, void* d) {
 	    break;
 	default:
 	    ink_release_assert(0);
+	    /* no break */
     }
 
     if (action.cancelled == 0) {

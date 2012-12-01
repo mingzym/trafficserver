@@ -16,7 +16,6 @@
 #include "raf_cmd.h"
 
 #include "ink_args.h"
-#include "snprintf.h"
 #include "Diags.h"
 
 /* Argument Stuff */
@@ -31,7 +30,7 @@ ArgumentDescription argument_descriptions[] = {
   { "log_file", 'L', "Log File", "S1023", log_file, NULL, NULL},
   { "debug_tags", 'T', "Debug Tags", "S1023", error_tags, "DEFT_LC_DEBUG", NULL},
   { "action_tags", 'B', "Behavior Tags", "S1023", action_tags, NULL, NULL},
-  { "help", 'h', "HELP!", NULL, NULL, NULL, usage }
+  { "help", 'h', "HELP!", NULL, NULL, NULL, print_usage }
 };
 int n_argument_descriptions = SIZE(argument_descriptions);
 
@@ -233,6 +232,7 @@ void LogCollateHandler::wait_for_shutdown_complete(s_event_t event, void* data) 
 	    break;
 	default:
 	    ink_release_assert(0);
+	    /* no break */
     }
 }
 
