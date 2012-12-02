@@ -30,7 +30,7 @@ ArgumentDescription argument_descriptions[] = {
   { "log_file", 'L', "Log File", "S1023", log_file, NULL, NULL},
   { "debug_tags", 'T', "Debug Tags", "S1023", error_tags, "DEFT_LC_DEBUG", NULL},
   { "action_tags", 'B', "Behavior Tags", "S1023", action_tags, NULL, NULL},
-  { "help", 'h', "HELP!", NULL, NULL, NULL, print_usage }
+  { "help", 'h', "HELP!", NULL, NULL, NULL, usage }
 };
 int n_argument_descriptions = SIZE(argument_descriptions);
 
@@ -94,7 +94,7 @@ ExitHandler::ExitHandler() : S_Continuation() {
 void ExitHandler::handle_exit(s_event_t event, void* data) {
 
     ink_release_assert(event == SEVENT_EXIT_NOTIFY);
-    int status = (int) data;
+    int status = (long) data;
 
     if (accept_handler) {
 	accept_handler->stop();
@@ -109,10 +109,10 @@ void ExitHandler::handle_exit(s_event_t event, void* data) {
 
 
 LogCollateHandler::LogCollateHandler() :
+    SioRafServer(),
     lc_mode(LC_RAF),
     input_buffer(NULL),
-    timer_event(NULL),
-    SioRafServer()
+    timer_event(NULL)
 {
 }
 

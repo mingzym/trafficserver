@@ -116,7 +116,7 @@ void TestRunResults::start(const char* tname, const char* uname, const char* bid
 
     int len = strlen(tname) + 1 + strlen(uname) + 1 + 32 + 1;
     run_id_str = (char*) malloc(len);
-    sprintf(run_id_str, "%s-%s-%u", tname, uname, start_time);
+    sprintf(run_id_str, "%s-%s-%ld", tname, uname, start_time);
 
     if (post_to_tinderbox) {
 	sio_buffer tinder_msg;
@@ -125,7 +125,7 @@ void TestRunResults::start(const char* tname, const char* uname, const char* bid
 	char start_msg[] = "Tests starting";
 	tinder_msg.fill(start_msg, sizeof(start_msg) - 1);
 
-	int i = post_tinderbox_message(&tinder_msg, NULL);
+	post_tinderbox_message(&tinder_msg, NULL);
     }
 
     if (save_results) {
@@ -260,9 +260,9 @@ void TestRunResults::build_summary_html(sio_buffer* output) {
 
     output->fill(hdr3, sizeof(hdr3)-1);
 
-    int num_tests = 0;
-    int total_errors = 0;
-    int total_warnings = 0;
+    //int num_tests = 0;
+    //int total_errors = 0;
+    //int total_warnings = 0;
     TestResult* current = results.head;
 
     while (current) {
@@ -447,7 +447,7 @@ void TestRunResults::build_tinderbox_message_hdr(const char* status, time_t now,
     output->fill(admin_hdr_end, sizeof(admin_hdr_end)-1);
 
     output->fill(start_time_hdr, sizeof(start_time_hdr)-1);
-    int r = sprintf(time_buf, "%u", start_time);
+    int r = sprintf(time_buf, "%ld", start_time);
     output->fill(time_buf, r);
     output->fill("\n", 1);
 
@@ -460,7 +460,7 @@ void TestRunResults::build_tinderbox_message_hdr(const char* status, time_t now,
     output->fill("\n", 1);
 
     output->fill(now_hdr, sizeof(now_hdr)-1);
-    r = sprintf(time_buf, "%u", now);
+    r = sprintf(time_buf, "%ld", now);
     output->fill(time_buf, r);
     output->fill("\n", 1);
 

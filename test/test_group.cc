@@ -242,7 +242,7 @@ struct test_group_place {
     char* test_group_name;
     const char** group_els;
     int current_el;
-    Link<test_group_place> link;
+    LINK(test_group_place, link);
 };
 
 test_group_place::test_group_place() :

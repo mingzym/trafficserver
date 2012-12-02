@@ -38,7 +38,7 @@ class LogCollateHandler : public SioRafServer {
     LogCollateHandler();
     virtual ~LogCollateHandler();
 
-    void LogCollateHandler::start(int new_fd);
+    virtual void start(int new_fd);
     void handle_log_input(s_event_t, void*);
     void wait_for_shutdown_complete(s_event_t, void* );
     static int active_loggers;

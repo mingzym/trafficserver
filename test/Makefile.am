@@ -30,6 +30,7 @@ proc_manager_LDADD = $(top_builddir)/lib/ts/libtsutil.la \
 
 test_log_collate_SOURCES = test_log_collate.cc \
 	  	           log_sender.cc \
+			   rafencode.cc \
 			   raf_cmd.cc \
 			   sio_buffer.cc \
 			   sio_loop.cc \
@@ -42,6 +43,7 @@ test_log_collate_LDADD = $(top_builddir)/lib/ts/libtsutil.la \
 		     	 @LIBRESOLV@ @LIBRT@ -lm @LIBDL@
 
 test_exec_SOURCES = test_exec.cc \
+		    rafencode.cc \
 		    raf_cmd.cc \
 		    remote_start.cc \
 		    sio_buffer.cc \
@@ -61,7 +63,7 @@ test_exec_LDADD = $(top_builddir)/lib/ts/libtsutil.la\
 		     @LIBCRYPT@ -lm @LIBGCC@ 
 
 test_interp_glue_wrap.c: test_interp_glue.i test_interp_glue.h
-	swig -perl5 -static -I$(top_srcdir)/test test_interp_glue.i
+	swig -perl5 -static -Wall -I$(top_srcdir)/test test_interp_glue.i
 
 pkg_ts:
 	$(mkinstalldirs) $(top_srcdir)/deft-install
