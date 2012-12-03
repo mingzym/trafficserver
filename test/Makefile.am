@@ -60,7 +60,7 @@ test_exec_LDADD = $(top_builddir)/lib/ts/libtsutil.la\
 		     -lperl \
 		     @LIBSOCKET@ @LIBNSL@ \
 		     @LIBRESOLV@ @LIBRT@ @LIBTCL@ @LIBDL@ \
-		     @LIBCRYPT@ -lm @LIBGCC@ 
+		     @LIBCRYPT@ -lm 
 
 test_interp_glue_wrap.c: test_interp_glue.i test_interp_glue.h
 	swig -perl5 -static -Wall -I$(top_srcdir)/test test_interp_glue.i
