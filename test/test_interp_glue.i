@@ -4,7 +4,7 @@
 %}
 %include cpointer.i
 
-%typemap(perl5,in) char** {
+%typemap(in) char** {
     AV* av =   SvRV($input);
     char** result = NULL;
 
@@ -36,7 +36,7 @@
     $1 = result;
 }
 
-%typemap(perl5,out) char** {
+%typemap(out) char** {
     char** from_c = $1;
     char** tmp;
     int i;
@@ -61,7 +61,7 @@
     }
 }
 
-%typemap(perl5,out) char* {
+%typemap(out) char* {
     char* from_c = $1;
     //int i;
     //int num_el = 0;
