@@ -1,4 +1,4 @@
-#!/inktest/dist/bin/perl
+#!/usr/bin/perl
 #
 #  run_test.pl
 #   Author          : Mike Chowla
