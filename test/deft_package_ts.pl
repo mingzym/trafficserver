@@ -1,4 +1,4 @@
-#!/inktest/dist/bin/perl
+#!/usr/bin/perl
 #
 #  deft_package_ts.pl
 #

@@ -674,7 +674,7 @@ sub populate_run_dir() {
     }
 }
 
-open(OUTPUT,">&=$ARGV[1]") || die "Couldn't open output: $!";
+open(OUTPUT,">&=",$ARGV[1]) || die "Couldn't open output: $!";
 
 my $tmp;
 my %input_args;

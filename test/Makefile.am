@@ -86,7 +86,7 @@ install-exec-local: proc_manager test_exec test_log_collate
 	cp $(top_srcdir)/test/deft_profile.sh $(top_srcdir)/deft-install/
 	cp $(top_srcdir)/test/run_test.sh $(top_srcdir)/deft-install/
 	cp $(top_srcdir)/test/run_test.pl $(top_srcdir)/deft-install/
-	perl $(top_srcdir)/test/setup_pkg_links.pl /home/inktomi/TrafficServer/TestToolPackages $(top_srcdir)/deft-install/packages
+	perl $(top_srcdir)/test/setup_pkg_links.pl $(top_srcdir)/TestToolPackages $(top_srcdir)/deft-install/packages
 
 clean-local:
 	-$(RM) -rf Templates.DB cxx_repository .deps
