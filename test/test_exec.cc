@@ -11,10 +11,6 @@
 
  ****************************************************************************/
 
-// Avoiding getting the whole libinktomi++ header file since
-//  it causes problems with Sunpro 5.0
-#define	_inktomiplus_h_
-
 #include <netdb.h>
 
 #include "ink_args.h"
@@ -49,8 +45,7 @@ int log_collator_fd = -1;
 int log_file_fd = -1;
 int kill_sig_received = -1;
 int kill_in_progress = 0;
-static const char rcs_full_id[] = "$Id: test_exec.cc,v 1.2 2003-06-01 18:38:29 re1 Exp $";
-static const char rcs_id[] = "$Revision: 1.2 $";
+static const char test_exec_version[] = "3.3.0";
 Diags *diags = NULL;
 char cur_script_path[PATH_MAX+1];
 
@@ -577,13 +572,6 @@ char* find_local_package(const char* pkg_name, const char* arch) {
 	return NULL;
     }
     
-    bool arch_is_sun_sparc;
-    if (strcmp(arch, "SunOS") == 0) {
-	arch_is_sun_sparc = true;
-    } else {
-	arch_is_sun_sparc = false;
-    }
-    
     int prefix_len = strlen(pkg_name) + 1 + strlen(arch);
     char* pkg_prefix = (char*) malloc(prefix_len + 1);
     sprintf(pkg_prefix, "%s-%s", pkg_name, arch);
@@ -592,13 +580,9 @@ char* find_local_package(const char* pkg_name, const char* arch) {
     while  ((dp = readdir(d)) != NULL) {
 	Debug("find_package", "looking at %s", dp->d_name);
 	if (strncmp(dp->d_name, pkg_prefix, prefix_len) == 0) {
-	    // Since SunOS is a prefix to SunOSx86 we need to make
-	    //   sure we dont' accidently return a x86 package when
-	    //   we need sparc one
-	    if (arch_is_sun_sparc == false ||
-		(!(dp->d_name[prefix_len] == 'x' &&
+	    if (!(dp->d_name[prefix_len] == 'x' &&
 		   (dp->d_name[prefix_len+1] == '8' &&
-		    (dp->d_name[prefix_len+2] == '6'))))) {
+		    (dp->d_name[prefix_len+2] == '6')))) {
 		rvalue = strdup(dp->d_name);
 		break;
 	    }
@@ -3802,7 +3786,7 @@ int main(int argc, char** argv) {
     process_args(argument_descriptions, n_argument_descriptions, argv);
 
     if (show_version) {
-	printf("test_exec: %s", rcs_full_id);
+	printf("test_exec: %s", test_exec_version);
 	exit(0);
     }
 
@@ -3845,7 +3829,7 @@ int main(int argc, char** argv) {
     }
 
     setup_port_stuff(ud_info);
-    TE_Status("test_exec v%s running", rcs_id);
+    TE_Status("test_exec v%s running", test_exec_version);
 
     run_results = new TestRunResults();
     run_results->start((test_group[0] == '\0') ? test_script : test_group,

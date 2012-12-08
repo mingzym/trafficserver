@@ -29,13 +29,13 @@ proc_manager_LDADD = $(top_builddir)/lib/ts/libtsutil.la \
 
 
 test_log_collate_SOURCES = test_log_collate.cc \
-	  	           log_sender.cc \
+			   log_sender.cc \
 			   rafencode.cc \
 			   raf_cmd.cc \
 			   sio_buffer.cc \
 			   sio_loop.cc \
 			   sio_raf_server.cc \
-		           test_utils.cc
+			   test_utils.cc
 
 test_log_collate_LDFLAGS = @EXTRA_CXX_LDFLAGS@
 test_log_collate_LDADD = $(top_builddir)/lib/ts/libtsutil.la \
@@ -48,11 +48,11 @@ test_exec_SOURCES = test_exec.cc \
 		    remote_start.cc \
 		    sio_buffer.cc \
 		    sio_loop.cc \
-	            test_interp_glue_wrap.c \
+		    test_interp_glue_wrap.c \
 		    test_exec_perl.c \
 		    test_group.cc \
 		    test_results.cc \
-	            test_utils.cc
+		    test_utils.cc
 
 test_exec_LDFLAGS = @EXTRA_CXX_LDFLAGS@
 test_exec_LDADD = $(top_builddir)/lib/ts/libtsutil.la\
