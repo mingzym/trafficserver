@@ -1525,9 +1525,6 @@ iocore_include_dirs="-I\$(top_srcdir)/iocore/eventsystem \
 -I\$(top_srcdir)/iocore/utils \
 -I\$(top_srcdir)/iocore/dns"
 
-# Testing Framework suffix generation hack
-TFW_PACKAGE_SUFFIX=$os_type
-
 MGMT_DEFS="$MGMT_DEFS -DMGMT_USE_SYSLOG"
 
 AC_MSG_NOTICE([Build using CC=$CC])
