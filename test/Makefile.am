@@ -79,9 +79,9 @@ install-exec-local: proc_manager test_exec test_log_collate
 	$(LN_S) ../test/parsers $(top_srcdir)/deft-install/parsers
 	-$(RM) $(top_srcdir)/deft-install/defs
 	$(LN_S) ../test/defs $(top_srcdir)/deft-install/defs
-	cp proc_manager $(top_srcdir)/deft-install/packages/proc_manager-$(TFW_PACKAGE_SUFFIX)
-	cp test_exec $(top_srcdir)/deft-install/packages/test_exec-$(TFW_PACKAGE_SUFFIX)
-	cp test_log_collate $(top_srcdir)/deft-install/packages/test_log_collate-$(TFW_PACKAGE_SUFFIX)
+	$(LIBTOOL) --mode=install install proc_manager $(abs_top_srcdir)/deft-install/packages/proc_manager
+	$(LIBTOOL) --mode=install install test_exec $(abs_top_srcdir)/deft-install/packages/test_exec
+	$(LIBTOOL) --mode=install install test_log_collate $(abs_top_srcdir)/deft-install/packages/test_log_collate
 	cp TestExec.pm $(top_srcdir)/deft-install/
 	cp $(top_srcdir)/test/deft_profile.sh $(top_srcdir)/deft-install/
 	cp $(top_srcdir)/test/run_test.sh $(top_srcdir)/deft-install/
