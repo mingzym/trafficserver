@@ -7,9 +7,10 @@ DEFT_PORTS="${DEFT_PORTS:--p 12000}"
 
 # export DEFT_PM_DEBUG='.*'
 
-DEFT_WORKAREA=/inktest/$USER-0
-DEFT_INSTALL=$SRC_WORKAREA/deft-install
-export PERL5LIB=$DEFT_INSTALL:$DEFT_INSTALL/scripts/perl_lib/
+DEFT_WORKAREA=~/ats_deft/log
+DEFT_INSTALL=~/ats_deft
+
+echo $PATH | grep ats_deft >/dev/null 2>&1 || export PATH=~/ats_deft/bin:$PATH
 
 DEFT_HELP="
 
@@ -18,7 +19,7 @@ DEFT_HELP="
    To run a program from the deft-install directory type the
    following:  
 
-        ./run_test.sh <BUILD_DIR> [-m] [-v] -p <PORT> -s <SCRIPT> [-k val]
+        test_exec <BUILD_DIR> [-m] [-v] -p <PORT> -s <SCRIPT> [-k val]
 
    The 'k' flag is used to lengthen the 'kill timeout' when running 
    instrumented binaries.  The 'v' flag starts up the event viewer,
@@ -28,7 +29,7 @@ DEFT_HELP="
    following steps:  First chdir to /inktest/<your directory>.  
    Then, run the process manager:  
 
-        ./proc_manager* -p <PORT> -d . -T.\*
+        proc_manager* -p <PORT> -d . -T.\*
 
    If you do not want to use the GUI viewer [-v] then keep tail on
    the test log, it gets truncated with each new test; so you don't 
@@ -38,9 +39,9 @@ DEFT_HELP="
 
    Examples:
 
-   ./run_test.sh BUILD $DEFT_PORTS -s plugins/thread-1/thread_functional.pl -v
-   ./run_test.sh BUILD $DEFT_PORTS -g SDK_full
-   ./run_test.sh COVERAGE $DEFT_PORTS -v my_test.pl -k 300
+   test_exec BUILD $DEFT_PORTS -s plugins/thread-1/thread_functional.pl -v
+   test_exec BUILD $DEFT_PORTS -g SDK_full
+   test_exec COVERAGE $DEFT_PORTS -v my_test.pl -k 300
 
    See scripts/acc/http/ldap/ldap-1.pl for a example syntest driven script.
 
@@ -59,7 +60,7 @@ DEFT_HELP="
 deft_start_proc() {
   local here=`pwd`
   cd $DEFT_WORKAREA
-  ./proc_manager* $DEFT_PORTS -d . -T.\*;
+  proc_manager $DEFT_PORTS -d . -T.\*;
   cd $here
 }
 
@@ -68,7 +69,7 @@ deft_start_test() {
    local deft_script=$2;
    local here=`pwd`
    cd $DEFT_INSTALL
-   ./run_test.sh $build -m $DEFT_PORTS -s $deft_script -T.\*
+   test_exec $build -m $DEFT_PORTS -s $deft_script -T.\*
    cd $here
 }
 
