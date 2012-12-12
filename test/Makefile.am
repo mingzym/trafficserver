@@ -65,10 +65,6 @@ test_exec_LDADD = $(top_builddir)/lib/ts/libtsutil.la\
 test_interp_glue_wrap.c: test_interp_glue.i test_interp_glue.h
 	swig -perl5 -static -Wall -I$(top_srcdir)/test test_interp_glue.i
 
-pkg_ts:
-	$(mkinstalldirs) $(top_srcdir)/deft-install
-	$(mkinstalldirs) $(top_srcdir)/deft-install/packages
-	$(srcdir)/deft_package_ts.pl -b $(top_builddir) -o $(top_srcdir)/deft-install/packages -R
 
 install-exec-local: proc_manager test_exec test_log_collate
 	$(mkinstalldirs) $(top_srcdir)/deft-install
