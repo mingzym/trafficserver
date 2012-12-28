@@ -14,7 +14,7 @@
 #ifndef _TEST_UTILS_H_
 #define _TEST_UTILS_H_
 
-char** build_argv(const char* arg0, const char* rest);
+char** build_argv(const char* arg0, const char* rest, int* r_argc);
 char** build_argv_v(const char* arg0, ...);
 char** append_argv(char** argv1, char** argv2);
 

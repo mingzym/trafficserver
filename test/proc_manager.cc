@@ -2683,16 +2683,17 @@ const char* ProcRecord::start_process() {
 	}
 
 	char** argv;
+	int argc;
 	if (start_args && tmp_start_args) {
 	    int len = strlen(start_args) + 1 + strlen(tmp_start_args) + 1;
 	    char* tmp = (char*) malloc(len);
 	    sprintf(tmp, "%s %s", start_args, tmp_start_args);
-	    argv = build_argv(start_cmd, tmp);
+	    argv = build_argv(start_cmd, tmp, &argc);
 	    ::free(tmp);
 	} else if (tmp_start_args) {
-	    argv = build_argv(start_cmd, tmp_start_args);
+	    argv = build_argv(start_cmd, tmp_start_args, &argc);
 	} else {
-	    argv = build_argv(start_cmd, start_args);
+	    argv = build_argv(start_cmd, start_args, &argc);
 	}
 
 	Debug("child", "Child execing cmd: %s", start_cmd);
@@ -3683,7 +3684,8 @@ void remote_startup() {
 	finish_startup();
     } else {
 	/* Parent */
-	write(1, "liftoff\n", 9);
+	if (write(1, "liftoff\n", 9)) {};
+
 	exit(0);
     }
 }

@@ -1,4 +1,4 @@
-#!/inktest/dist/bin/perl
+#!/usr/bin/perl
 #
 #  log_viewer.pl
 #  Author          : Mike Chowla

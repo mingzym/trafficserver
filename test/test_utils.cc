@@ -28,7 +28,7 @@
 //    
 //   Uses rafdecode to handle quoting on arg 'rest'
 //
-char** build_argv(const char* arg0, const char* rest) {
+char** build_argv(const char* arg0, const char* rest, int* r_argc) {
 
     int argc = 1;
 
@@ -69,6 +69,7 @@ char** build_argv(const char* arg0, const char* rest) {
 
     argv[argc] = NULL;
 
+    *r_argc=argc;
     return argv;
 }
 

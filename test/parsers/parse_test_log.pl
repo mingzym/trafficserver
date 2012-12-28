@@ -1,4 +1,4 @@
-#!/inktest/dist/bin/perl
+#!/usr/bin/perl
 #
 #  parse_test_log.pl
 #  Author          : Mike Chowla
@@ -10,7 +10,7 @@
 #   (c) 2002 Inktomi Corporation.  All Rights Reserved.  Confidential.
 #
 
-use strict Vars;
+##use Vars;
 use parse_dispatcher;
 
 our @errors = ();

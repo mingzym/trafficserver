@@ -1,4 +1,4 @@
-#!/inktest/dist/bin/perl -w
+#!/usr/bin/perl -w
 #
 #  allocate_ports-instantiate.pl
 #  Author: stephane

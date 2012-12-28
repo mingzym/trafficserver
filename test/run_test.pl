@@ -17,12 +17,6 @@ use File::Spec;
 
 our $pkg_suffix = `uname -s`;
 chomp($pkg_suffix);
-if ($pkg_suffix eq "SunOS") {
-    my $arch = `uname -p`;
-    if ($arch eq "i386") {
-	$pkg_suffix = "SunOSx86";
-    }
-}
 
 sub check_ts_pkg {
 

@@ -30,7 +30,6 @@
 #include "test_results.h"
 
 #include "test_interp_glue.h"
-
 /* Constants */
 static const int SIZE_32K = 32768;
 
@@ -60,7 +59,7 @@ int save_results = 0;
 int kill_wait = 2;
 static char error_tags[1024];
 static char action_tags[1024];
-static char stuff_path[1024] = "/inktest";
+static char stuff_path[1024] = "~/ats_deft/stuff";
 static char package_dir[1024] = "packages";
 static char defs_file[1024] = "localhost.def";
 static char defs_dir[1024] = "defs";
@@ -71,15 +70,15 @@ static char script_dir[1024] = "scripts";
 static char log_file[1024] = "test.log";
 static char log_parser_dir[1024] = "parsers";
 static char log_parser_bin[1024] = "parse_test_log.pl";
-static char perl_args[1024] = "";
+//static char script_engine_args[1024] = "";
 static char script_args[1024] = "";
 static char test_uniquer[128] = "-0";
 static char test_group[256] = "";
 static char test_group_file[512] = "test_groups.deft";
-char tinderbox_machine[256] = "spork.inktomi.com";
-char tinderbox_tree[256] = "x_mchowla_test";
-char save_results_dir[512] = "/home/mchowla/public_html/test_results";
-char save_results_url[512] = "http://internal.inktomi.com/~mchowla/test_results/";
+char tinderbox_machine[256] = "localhost";
+char tinderbox_tree[256] = "ats_deft";
+char save_results_dir[512] = "~/public_html/test_results";
+char save_results_url[512] = "http://localhost/~ats/test_results/";
 char build_id[512] = "";
 
 ArgumentDescription argument_descriptions[] = {
@@ -94,7 +93,7 @@ ArgumentDescription argument_descriptions[] = {
   { "defines_add", 'w', "Defines Dir", "S1023", defs_add, NULL, NULL},
   { "script", 's', "Test Script", "S1023", test_script, NULL, NULL},
   { "script_args", 'a', "Script Args", "S1023", script_args, NULL, NULL},
-  { "perl_args", 'A', "Perl Args", "S1023", perl_args, NULL, NULL},
+//  { "script_engine_args", 'A', "Script Engine Args", "S1023", script_engine_args, NULL, NULL},
   { "manual_start", 'm', "Manual component startup", "F", &manual_startup, NULL, NULL},
   { "kill_wait", 'k', "Time to wait for a kill to finish", "I", &kill_wait, NULL, NULL},
   { "log_file", 'L', "Log File", "S1023", log_file, NULL, NULL},
@@ -2865,8 +2864,11 @@ int run_log_parser(TestResult* results, const char* output_file,
 	return -1;
     } else if (parser_pid == 0) {
 	/* Child */
-	chdir(log_parser_dir);
+	r = chdir(log_parser_dir);
 
+       if (r < 0) {
+           Fatal("Could not change to parsers directory : %s", strerror(errno));
+        }
 	// Set up our stdout pipe
 	if (pipe_stdout) {
 	    close(pipe_array[0]);
@@ -3046,7 +3048,7 @@ int start_log_viewer() {
 	r = chdir(log_viewer_dir);
 
 	if (r < 0) {
-	    Fatal("Could not change to parsers directory : %s", strerror(errno));
+	    Fatal("Could not change to viewer directory : %s", strerror(errno));
 	}
 
 	// FIX - use fd limit
@@ -3243,40 +3245,38 @@ int remove_dir(const char* dir_name) {
 }
 
 extern "C" {
-    void run_perl(char** argv);
+    void run_script(int argc, char** argv);
 };
 
-void prep_and_run_perl(const char* test_script_arg,
+void prep_and_run_script(const char* test_script_arg,
 		       char** script_args_in) {
 
     int len = 0;
-    len += strlen(perl_args) + 1;
 
     if (test_script_arg[0] != '/') {
 	len += strlen(script_dir) + 1;
     } 
     len += strlen(test_script_arg);
 
-    if  (script_args_in == NULL) {
-	len += 1 + strlen(script_args);
-    }
-    
-    {
-       static char p_env[1000];
-       sprintf (p_env, "PERL5LIB=%s", lib_dir);
-       putenv (p_env);
-    }
-
     char* argv_str = (char*) malloc(len + 1 + 2);
 
-    sprintf(argv_str, "%s %s%s%s %s",
-		perl_args,
-		(test_script_arg[0] == '/') ? "" : script_dir,
-		(test_script_arg[0] == '/') ? "" : "/",
-		test_script_arg,
-		(script_args_in == NULL) ? script_args : "");
+    sprintf(argv_str, "%s%s%s",
+              (test_script_arg[0] == '/') ? "" : script_dir,
+              (test_script_arg[0] == '/') ? "" : "/",
+              test_script_arg
+              );
+    int perl_argc = 0;
+    char** perl_argv = build_argv(argv_str, (script_args_in == NULL) ? script_args : "", &perl_argc);
 
-    char** perl_argv = build_argv("test_exec_perl", argv_str);
+
+//    sprintf(argv_str, "%s %s%s%s %s",
+//		script_engine_args,
+//		(test_script_arg[0] == '/') ? "" : script_dir,
+//		(test_script_arg[0] == '/') ? "" : "/",
+//		test_script_arg,
+//		(script_args_in == NULL) ? script_args : "");
+//
+//    char** perl_argv = build_argv("test_exec", argv_str);
 
     if (script_args_in) {
 	perl_argv = append_argv(perl_argv, script_args_in);
@@ -3293,7 +3293,7 @@ void prep_and_run_perl(const char* test_script_arg,
 	TE_Status("Build Id: %s", build_id);
     }
 
-    run_perl(perl_argv);
+    run_script(perl_argc, perl_argv);
     TE_Status("Completed test script %s", test_script_arg);
 
     destroy_argv(perl_argv);
@@ -3343,7 +3343,7 @@ void find_and_run_tests() {
 	    TestResult* test_result = run_results->new_result();
 
 	    test_result->start(cur_test_case->name);
-	    prep_and_run_perl(cur_test_case->test_case_elements[0],
+	    prep_and_run_script(cur_test_case->test_case_elements[0],
 			      (char**) cur_test_case->test_case_elements + 1);
 	    test_result->finish();
 
@@ -3364,10 +3364,10 @@ void find_and_run_tests() {
 	test_result->start(test_script);
 
 	if (lookup_test_case(test_script, &my_case)) {
-	    prep_and_run_perl(my_case.test_case_elements[0],
+	    prep_and_run_script(my_case.test_case_elements[0],
 			      (char**) my_case.test_case_elements + 1);
 	} else {
-	    prep_and_run_perl(test_script, NULL);
+	    prep_and_run_script(test_script, NULL);
 	}
 
 	test_result->finish();

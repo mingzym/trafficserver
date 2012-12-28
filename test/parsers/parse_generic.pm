@@ -12,7 +12,7 @@
 package parse_generic;
 require Exporter;
 
-use strict Vars;
+##use strict Vars;
 
 our @ISA = qw(Exporter);
 our @EXPORT = qw();

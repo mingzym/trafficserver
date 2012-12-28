@@ -2,13 +2,12 @@
 # SOURCE THIS FILE INTO YOUR ENVIRONMENT
 
 USER=`basename $HOME`
-SRC_WORKAREA=${SRC_WORKAREA:-/export/workareas/$USER/traffic}
 DEFT_PORTS="${DEFT_PORTS:--p 12000}"
 
 # export DEFT_PM_DEBUG='.*'
 
-DEFT_WORKAREA=~/ats_deft/log
-DEFT_INSTALL=~/ats_deft
+DEFT_ROOT=$HOME/ats_deft
+export DEFT_ROOT
 
 echo $PATH | grep ats_deft >/dev/null 2>&1 || export PATH=~/ats_deft/bin:$PATH
 
@@ -35,7 +34,7 @@ DEFT_HELP="
    the test log, it gets truncated with each new test; so you don't 
    need to re-tail the file.
 
-        tail -f $DEFT_WORKAREA/log/test.log
+        tail -f $DEFT_ROOT/log/test.log
 
    Examples:
 
@@ -59,7 +58,7 @@ DEFT_HELP="
 
 deft_start_proc() {
   local here=`pwd`
-  cd $DEFT_WORKAREA
+  cd $DEFT_ROOT
   proc_manager $DEFT_PORTS -d . -T.\*;
   cd $here
 }
@@ -68,21 +67,26 @@ deft_start_test() {
    local build=$1;
    local deft_script=$2;
    local here=`pwd`
-   cd $DEFT_INSTALL
+   cd $DEFT_ROOT
    test_exec $build -m $DEFT_PORTS -s $deft_script -T.\*
    cd $here
 }
 
 cd_deft() {
-   cd $DEFT_INSTALL
+   cd $DEFT_ROOT
 }
 
 deft_check () {
-	mkdir -p $DEFT_WORKAREA/tmp/
-	local NF=$DEFT_WORKAREA/tmp/$1
-	echo 'sub TestExec::boot_TestExec() {}' > $NF
-    cat $1 >> $NF
+   if [ -f $1 ]
+   then
+	mkdir -p $DEFT_ROOT/tmp/
+	local NF=$DEFT_ROOT/tmp/$(basename $1)
+	echo 'sub TestExecc::boot_TestExec() {}' > $NF
+        cat $1 >> $NF
 	perl -cw $NF
+   else
+        echo "where is the $1 ???"
+   fi
 }
 
 echo "$DEFT_HELP";
