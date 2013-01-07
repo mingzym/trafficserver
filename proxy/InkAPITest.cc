@@ -148,6 +148,8 @@ REGRESSION_TEST(SDK_API_TSPluginDirGet) (RegressionTest * test, int atype, int *
   const char *plugin_dir = TSPluginDirGet();
   const char *install_dir = TSInstallDirGet();
 
+  DIR *dir;
+
   if (!plugin_dir) {
     SDK_RPRINT(test, "TSPluginDirGet", "TestCase1", TC_FAIL, "can't get plugin dir");
     *pstatus = REGRESSION_TEST_FAILED;
@@ -163,7 +165,7 @@ REGRESSION_TEST(SDK_API_TSPluginDirGet) (RegressionTest * test, int atype, int *
   // Note: This doesn't have to be true
   //      since the location can be anywhere
   //      We only pass this test, with the default layout.
-  if (strstr(plugin_dir, "libexec/trafficserver") == NULL) {
+  if ((dir = opendir(plugin_dir)) == NULL) {
     SDK_RPRINT(test, "TSPluginDirGet", "TestCase2", TC_FAIL,
                "plugin dir(%s) is incorrect, expected (%s) in path. Are you using the default layout?",
                plugin_dir,"libexec/trafficserver");
