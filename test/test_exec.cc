@@ -64,12 +64,12 @@ static char package_dir[1024] = "packages";
 static char defs_file[1024] = "localhost.def";
 static char defs_dir[1024] = "defs";
 static char defs_add[1024] = "";
-static char test_script[1024] = "jtest.pl";
+static char test_script[1024] = "jtest.py";
 static char lib_dir[1024] = "scripts/perl_lib";
 static char script_dir[1024] = "scripts";
 static char log_file[1024] = "test.log";
 static char log_parser_dir[1024] = "parsers";
-static char log_parser_bin[1024] = "parse_test_log.pl";
+static char log_parser_bin[1024] = "parse_test_log.py";
 //static char script_engine_args[1024] = "";
 static char script_args[1024] = "";
 static char test_uniquer[128] = "-0";
@@ -2885,18 +2885,18 @@ int run_log_parser(TestResult* results, const char* output_file,
 	}
 
 	if (output_file != NULL) {
-	    args_array[next_arg] = "-out";
+	    args_array[next_arg] = "-o";
 	    args_array[next_arg+1] = output_file;
 	    next_arg += 2;
 	}
 
 	if (html_output) {
-	    args_array[next_arg] = "-html";
+	    args_array[next_arg] = "-H";
 	    next_arg++;
 	}
 
 	if (test_case_name) {
-	    args_array[next_arg] = "-testname";
+	    args_array[next_arg] = "-T";
 	    args_array[next_arg+1] = test_case_name;
 	    next_arg += 2;
 	}
@@ -2906,7 +2906,7 @@ int run_log_parser(TestResult* results, const char* output_file,
 	    close(i);
 	}
 
-	r = execl(log_parser_bin, log_parser_bin, "-in", ud_info->log_file,
+	r = execl(log_parser_bin, log_parser_bin, "-i", ud_info->log_file,
 		  args_array[0], args_array[1], args_array[2], args_array[3], args_array[4], NULL);
 
 	if (r < 0) {
